@@ -1,24 +1,20 @@
 # numba_midi
-numba-accelerated python midi score processing library
+A numba-accelerated Python library for MIDI score processing.
 
-# Design choices
+### Design Choices
 
-The implementation is in pure python and as a results is portable and easy to modify.
-We use numpy vectorized operations when possible and use numba for some operations that are hard to vectorize.
-Using lexicographic sorting allows to perform many operations efficiently without python loops.
+The implementation is in pure Python, making it portable and easy to modify. We use NumPy vectorized operations when possible and leverage Numba for operations that are difficult to vectorize. Lexicographic sorting allows for efficient operations without Python loops.
 
-# Music score Interfaces
+### Music Score Interfaces
 
-The `Score` class represent music score with notes prepresented as atomic items with start time and durations instead of note-on and note-off events that need to be matched. This representation is more convenient for offline processing. 
+The `Score` class represents a music score with notes as atomic items, including start times and durations, instead of note-on and note-off events that need to be matched. This representation is more convenient for offline processing.
 
-We also provide a `MidiScore` class is intended to be as close as possible to the raw midi data using midi events representations with note on and note off events. This class is used as an intermediate representation when reading and writing from/to midi files.
+The `MidiScore` class is designed to closely mirror raw MIDI data using MIDI event representations with note-on and note-off events. This class serves as an intermediate representation when reading from and writing to MIDI files.
 
+### Piano Roll
 
-# Piano roll
+We provide a `PianoRoll` dataclass with conversion functions to and from MIDI scores.
 
-We provide a `PianoRoll` dataclass with conversion function from and to midi scores.
+### To Do
 
-# To Do
-
-* support Midi writing
- 
+* Support MIDI writing

@@ -1,12 +1,14 @@
 """Tools to process piano roll reprentationss of MIDI scores."""
 
-from copy import copy
+from dataclasses import dataclass
+from math import ceil
 
 from numba import jit
 import numpy as np
 
-
 from numba_midi.score import (
+    check_no_overlapping_notes,
+    check_no_overlapping_notes_in_score,
     control_dtype,
     note_dtype,
     pedal_dtype,
@@ -14,16 +16,6 @@ from numba_midi.score import (
     Score,
     Track,
 )
-from numba_midi.instruments import instrument_to_program
-from numba_midi.score import (
-    check_no_overlapping_notes,
-    check_no_overlapping_notes_in_score,
-)
-
-from dataclasses import dataclass
-from math import ceil
-
-import numpy as np
 
 
 @dataclass
@@ -187,12 +179,9 @@ def piano_roll_to_score(
 ) -> Score:
     """Create a score from a piano roll representation."""
     assert piano_roll.array.dtype == np.uint8, "Piano roll array must be of type uint8"
-    piano_roll_semitone = maximum_filter(
-        piano_roll.array,
-        size=(piano_roll.num_bin_per_semitone, 1),
-        mode="constant",
-        cval=0,
-    )[:: piano_roll.num_bin_per_semitone, :]
+    piano_roll_semitone = piano_roll.array.reshape(-1, piano_roll.num_bin_per_semitone, piano_roll.array.shape[1]).max(
+        axis=1
+    )
 
     start, duration, pitch, velocity = _piano_roll_to_score_jit(
         piano_roll=piano_roll_semitone,

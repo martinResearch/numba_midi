@@ -1,6 +1,8 @@
-from numba_midi import load_score
+"""Test the numba_midi library."""
 
 from pathlib import Path
+
+from numba_midi import load_score
 
 
 def test_numba_midi() -> None:

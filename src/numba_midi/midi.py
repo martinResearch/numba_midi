@@ -1,13 +1,10 @@
+"""Functions to parse MIDI files and extract events using Numba for performance."""
+
 from dataclasses import dataclass
 
 from numba import njit
 from numba.typed import List
 import numpy as np
-
-from dataclasses import dataclass
-
-import numpy as np
-
 
 # Define structured dtype to have a homogenous representation of MIDI events
 event_dtype = np.dtype(
@@ -60,9 +57,7 @@ class MidiTrack:
     notated_32nd_notes_per_beat: int
 
     def __post_init__(self):
-        assert self.events.dtype == event_dtype, (
-            "Events must be a structured numpy array with event_dtype elements"
-        )
+        assert self.events.dtype == event_dtype, "Events must be a structured numpy array with event_dtype elements"
 
 
 @dataclass
@@ -73,9 +68,7 @@ class Midi:
 
 
 @njit(cache=True, boundscheck=False)
-def get_even_ticks_and_times(
-    midi_events: np.ndarray, ticks_per_quarter: int
-) -> np.ndarray:
+def get_even_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
     """Get the time of each event in ticks and seconds."""
     tick = 0
     time = 0
@@ -153,9 +146,7 @@ def _parse_midi_track(data, offset, ticks_per_quarter):
             offset += meta_length
 
             if meta_type == 0x51:  # Set Tempo event
-                current_tempo = (
-                    (meta_data[0] << 16) | (meta_data[1] << 8) | meta_data[2]
-                )
+                current_tempo = (meta_data[0] << 16) | (meta_data[1] << 8) | meta_data[2]
                 midi_events.append((delta_ticks, 5, 0, current_tempo, 0))
 
             # time signature

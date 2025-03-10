@@ -32,7 +32,9 @@ jobs:
 
     - name: Lint with ruff
       run: |        
-        ruff .  
+        ruff format --check .
+        ruff check .
+  
   
     - name: Lint with flake8
       run: |        

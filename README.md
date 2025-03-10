@@ -3,7 +3,7 @@ A numba-accelerated Python library for MIDI score processing.
 
 ### Design Choices
 
-The implementation is in pure Python, making it portable and easy to modify. We use NumPy vectorized operations when possible and leverage Numba for operations that are difficult to vectorize. Lexicographic sorting often allows for efficient operations without Python loops.
+The implementation is in pure Python, making it portable and easy to modify. We use NumPy vectorized operations when possible and leverage Numba for operations that are difficult to vectorize. Lexicographic sorting of numpy arrays often allows for efficient operations without Python loops.
 
 ### Music Score Interfaces
 

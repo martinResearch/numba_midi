@@ -1,0 +1,9 @@
+name: numba_midi
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  - python=3.11
+
+

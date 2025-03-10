@@ -36,7 +36,7 @@ class Track:
     pedals: np.ndarray  # 1D structured numpy array with pedal_dtype elements
     pitch_bends: np.ndarray  # 1D structured numpy array with pitch_bend_dtype elements
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         assert self.notes.dtype == note_dtype, "Notes must be a structured numpy array with note_dtype elements"
         assert self.controls.dtype == control_dtype, (
             "Controls must be a structured numpy array with control_dtype elements"

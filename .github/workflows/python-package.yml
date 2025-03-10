@@ -34,11 +34,6 @@ jobs:
       run: |        
         ruff format --check .
         ruff check .
-  
-  
-    - name: Lint with flake8
-      run: |        
-        flake8 . --show-source
 
     - name: mypy check
       run: |        

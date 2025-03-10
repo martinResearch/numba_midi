@@ -17,7 +17,7 @@ order-by-type=false
 
 [lint]
 preview = true
-select = ["D", "E", "F", "B", "W", "N", "A", "Q", "PL", "I"]
+select = ["D", "E", "F", "B", "W", "N", "A", "Q", "PL", "I", "ANN"]
 ignore = [
 "PLR2004", # magic value comparison
 "PLW1514", # unspecified encoding in open

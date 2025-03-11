@@ -1,11 +1,10 @@
 # numba_midi
 A Numba-accelerated Python library for reading MIDI file and score processing.
 
-The implementation is in pure Python, making it portable and easy to modify. We use NumPy vectorized operations when possible and leverage Numba for operations that are difficult to vectorize. Lexicographic sorting of NumPy arrays often allows for efficient operations without Python loops.
+The implementation is in pure Python, making it portable and easy to modify. We made the code efficient by using only few NumPy structured arrays to store the data, using NumPy vectorized operations when possible and leveraging Numba for operations that are difficult to vectorize. Using lexicographic sorting on NumPy arrays often allows for efficient operations without Python loops.
 
 
 ### Installation 
-
 
 ```
 pip install git+https://github.com/martinResearch/numba_midi.git

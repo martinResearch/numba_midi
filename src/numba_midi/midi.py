@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from numba import njit
+from numba.core.decorators import njit
 from numba.typed import List
 import numpy as np
 
@@ -68,7 +68,7 @@ class Midi:
 
 
 @njit(cache=True, boundscheck=False)
-def get_even_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
+def get_even_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> tuple[np.ndarray, np.ndarray]:
     """Get the time of each event in ticks and seconds."""
     tick = 0
     time = 0

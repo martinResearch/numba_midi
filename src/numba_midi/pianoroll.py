@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from math import ceil
 
-from numba import jit
+from numba.core.decorators import njit
 import numpy as np
 
 from numba_midi.score import (
@@ -45,7 +45,7 @@ class PianoRoll:
         assert self.pitch_min >= 0, "pitch_min must be greater than or equal to 0"
 
 
-@jit(nopython=True, cache=True)
+@njit(cache=True)
 def _add_notes_to_piano_roll_jit(
     piano_roll: np.ndarray,
     pitch: np.ndarray,
@@ -121,7 +121,7 @@ def get_piano_roll(
     )
 
 
-@jit(nopython=True, cache=True)
+@njit(cache=True)
 def _piano_roll_to_score_jit(
     piano_roll: np.ndarray, time_step: float, pitch_min: int = 0, threshold: float = 0.0
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

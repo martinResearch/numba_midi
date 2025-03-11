@@ -3,7 +3,7 @@
 from copy import copy
 from dataclasses import dataclass
 
-from numba import njit
+from numba.core.decorators import njit
 import numpy as np
 
 from numba_midi.instruments import instrument_to_program
@@ -346,6 +346,7 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
         new_pitch_bends["time"] = np.maximum(new_pitch_bends["time"] - start, 0)
 
         new_track = Track(
+            channel=track.channel,
             program=track.program,
             is_drum=track.is_drum,
             name=track.name,

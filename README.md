@@ -28,3 +28,4 @@ We provide a `PianoRoll` dataclass with conversion functions to and from MIDI sc
 
 * [pypianoroll](https://github.com/salu133445/pypianoroll): Focused on piano roll functionalities. It is implemented with Python loops over notes and thus likely to be slow. It uses pretty-midi to load MIDI files, which is also slow.
 * [symusic](https://github.com/Yikai-Liao/symusic): Implemented in C++ and interfaced with PyBind11. It is very fast, but the fact that it is implemented in C++ makes it harder to extend than pure Python. `numba_midi` is a bit slower but implemented in pure Python.
+* [muspy](https://github.com/salu133445/muspy): represent the music score using python classes with one `Note` class instance for each note. As a result, one cannot use efficient NumPy vectorized operations and must use python loops, which make the processing slower.

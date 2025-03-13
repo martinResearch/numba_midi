@@ -7,7 +7,7 @@ from numba.core.decorators import njit
 import numpy as np
 
 from numba_midi.instruments import instrument_to_program
-from numba_midi.midi import event_dtype, get_event_ticks_and_times, load_midi_score, Midi, MidiTrack
+from numba_midi.midi import event_dtype, get_event_ticks_and_times, load_midi_score, Midi, MidiTrack, save_midi_file
 
 note_dtype = np.dtype(
     [
@@ -288,6 +288,11 @@ def load_score(file_path: str) -> Score:
     """Loads a MIDI file and converts it to a Score."""
     midi_raw = load_midi_score(file_path)
     return midi_to_score(midi_raw)
+
+def save_score_to_midi(score: Score, file_path: str) -> None:
+    """Saves a Score to a MIDI file."""
+    midi_score = score_to_midi(score)
+    save_midi_file(midi_score, file_path)
 
 
 def merge_tracks_with_same_program(score: Score) -> Score:

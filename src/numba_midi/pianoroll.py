@@ -83,7 +83,7 @@ def _add_notes_to_piano_roll_jit(
             piano_roll[row, col] += note_velocity
 
 
-def get_piano_roll(
+def score_to_piano_roll(
     score: Score,
     time_step: float,
     pitch_min: int,

@@ -75,3 +75,4 @@ if __name__ == "__main__":
 
     test_numba_midi()
     test_save_midi_data_load_midi_bytes_roundtrip()
+    print("All tests passed!")

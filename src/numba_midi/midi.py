@@ -310,70 +310,85 @@ def sort_midi_events(midi_events: np.ndarray) -> np.ndarray:
     return sorted_events
 
 
-def encode_delta_time(delta_time: int) -> bytes:
+@njit(cache=True, boundscheck=False)
+def encode_delta_time(delta_time: int) -> List:
     """Encodes delta time as a variable-length quantity."""
     if delta_time == 0:
-        return b"\x00"
-    result = bytearray()
+        return List([np.uint8(0)])
+    result = List.empty_list(np.uint8)
     while delta_time > 0:
         byte = delta_time & 0x7F
         delta_time >>= 7
-        if result:
+        if len(result) > 0:
             byte |= 0x80
-        result.append(byte)
-    return bytes(result[::-1])
+        result.insert(0, np.uint8(byte))
+    return result
 
 
 def _encode_midi_track(track: MidiTrack) -> bytes:
-    """Encodes a MIDI track to bytes."""
-    data = b""
-
-    # add track name
-    data += encode_delta_time(0)
-    track_name = track.name.encode("utf-8")
-    data += bytes([0xFF, 0x03]) + bytes([len(track_name)]) + track_name
-
-    # add time signature
-    data += encode_delta_time(0)
-    data += bytes([0xFF, 0x58, 4]) + bytes(
-        [track.numerator, track.denominator, track.clocks_per_click, track.notated_32nd_notes_per_beat]
+    data = _encode_midi_track_numba(
+        track.name.encode("utf-8"),  # Pre-encode the name to bytes
+        track.numerator,
+        track.denominator,
+        track.clocks_per_click,
+        track.notated_32nd_notes_per_beat,
+        track.events,
     )
-    # # add tempo change
-    # data += bytes([0xFF, 0x51, 3]) + bytes([0x07, 0xA1, 0x20])  # 120 BPM
+    return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
 
-    for event in track.events:
+
+@njit(cache=True, boundscheck=False)
+def _encode_midi_track_numba(
+    name: bytes,
+    numerator: int,
+    denominator: int,
+    clocks_per_click: int,
+    notated_32nd_notes_per_beat: int,
+    events: np.ndarray,
+) -> bytes:
+    """Encodes a MIDI track to bytes."""
+    data = []
+
+    # Add track name
+    data.extend(encode_delta_time(0))
+    data.extend([0xFF, 0x03, len(name)])
+    data.extend(name)
+
+    # Add time signature
+    data.extend(encode_delta_time(0))
+    data.extend([0xFF, 0x58, 4, numerator, denominator, clocks_per_click, notated_32nd_notes_per_beat])
+
+    for event in events:
         delta_time = event["delta_time"]
         event_type = event["event_type"]
         channel = event["channel"]
         value1 = event["value1"]
         value2 = event["value2"]
 
-        data += encode_delta_time(delta_time)  # delta time for track name
+        data.extend(encode_delta_time(delta_time))  # Delta time for the event
 
         if event_type == 0:
             # Note On
-            data += bytes([0x90 | channel]) + bytes([value1, value2])
+            data.extend([0x90 | channel, value1, value2])
         elif event_type == 1:
             # Note Off
-            data += bytes([0x80 | channel]) + bytes([value1, value2])
+            data.extend([0x80 | channel, value1, value2])
         elif event_type == 2:
             # Pitch Bend
-            data += bytes([0xE0 | channel]) + bytes([value1, 0])
+            data.extend([0xE0 | channel, value1, 0])
         elif event_type == 3:
             # Control Change
-            data += bytes([0xB0 | channel]) + bytes([value1, value2])
+            data.extend([0xB0 | channel, value1, value2])
         elif event_type == 4:
             # Program Change
-            data += bytes([0xC0 | channel]) + bytes([value1])
+            data.extend([0xC0 | channel, value1])
         elif event_type == 5:
             # Tempo Change
-            data += bytes([0xFF, 0x51, 3]) + bytes([value1 >> 16, (value1 >> 8) & 0xFF, value1 & 0xFF])
-        elif event_type == 6:
-            # Meta event (e.g., track name)
-            data += bytes([0xFF, 0x03]) + bytes([len(value1)]) + value1
+            data.extend([0xFF, 0x51, 3, value1 >> 16, (value1 >> 8) & 0xFF, value1 & 0xFF])
         else:
             raise ValueError(f"Invalid event type: {event_type}")
-    return b"MTrk" + len(data).to_bytes(4, "big") + data
+
+    return np.array(data, dtype=np.uint8)
 
 
 def save_midi_data(midi: Midi) -> bytes:
@@ -388,6 +403,13 @@ def save_midi_data(midi: Midi) -> bytes:
     for track in midi.tracks:
         midi_bytes += _encode_midi_track(track)
     return midi_bytes
+
+
+def save_midi_file(midi: Midi, file_path: str) -> None:
+    """Saves MIDI data to a file."""
+    midi_bytes = save_midi_data(midi)
+    with open(file_path, "wb") as file:
+        file.write(midi_bytes)
 
 
 def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:

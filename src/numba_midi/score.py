@@ -581,6 +581,7 @@ def assert_scores_equal(
     if sort_tracks_with_programs:
         tracks_1 = sorted(tracks_1, key=lambda x: x.program)
         tracks_2 = sorted(tracks_2, key=lambda x: x.program)
+
     for track1, track2 in zip(tracks_1, tracks_2):
         # group the notes by pitch
         notes1: dict[int, list[np.ndarray]] = {}

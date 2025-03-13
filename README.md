@@ -20,10 +20,6 @@ pip install git+https://github.com/martinResearch/numba_midi.git
 
 The library includes a `PianoRoll` dataclass with conversion functions to seamlessly transform between piano rolls and MIDI scores.
 
-## To-Do
-
-- Add support for MIDI file writing.
-
 ## Alternatives
 
 Here are some alternative libraries and how they compare to `numba_midi`:

@@ -85,7 +85,21 @@ class Midi:
 
 
 @njit(cache=True, boundscheck=False)
-def get_even_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> tuple[np.ndarray, np.ndarray]:
+def get_event_ticks(midi_events: np.ndarray) -> np.ndarray:
+    """Get the time of each event in ticks and seconds."""
+    tick = np.uint32(0)
+    events_ticks = np.zeros((len(midi_events)), dtype=np.uint32)
+
+    for i in range(len(midi_events)):
+        delta_time = midi_events[i]["delta_time"]
+        tick += delta_time
+        events_ticks[i] = tick
+
+    return events_ticks
+
+
+@njit(cache=True, boundscheck=False)
+def get_event_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> tuple[np.ndarray, np.ndarray]:
     """Get the time of each event in ticks and seconds."""
     tick = np.uint32(0)
     time = 0.0
@@ -285,6 +299,17 @@ def load_midi_bytes(data: bytes) -> Midi:
     return Midi(tracks=tracks, ticks_per_quarter=ticks_per_quarter)
 
 
+def sort_midi_events(midi_events: np.ndarray) -> np.ndarray:
+    """Sorts MIDI events."""
+    ticks = get_event_ticks(midi_events)
+    order = np.lexsort((midi_events["channel"], midi_events["event_type"], ticks))
+    sorted_events = midi_events[order]
+    sorted_ticks = ticks[order]
+    delta_time = np.diff(sorted_ticks, prepend=0)
+    sorted_events["delta_time"] = delta_time
+    return sorted_events
+
+
 def encode_delta_time(delta_time: int) -> bytes:
     """Encodes delta time as a variable-length quantity."""
     if delta_time == 0:
@@ -370,9 +395,11 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
     assert midi1.ticks_per_quarter == midi2.ticks_per_quarter
     assert len(midi1.tracks) == len(midi2.tracks)
     for track1, track2 in zip(midi1.tracks, midi2.tracks):
+        sorted_events1 = sort_midi_events(track1.events)
+        sorted_events2 = sort_midi_events(track2.events)
         assert track1.name == track2.name
         assert track1.numerator == track2.numerator
         assert track1.denominator == track2.denominator
         assert track1.clocks_per_click == track2.clocks_per_click
         assert track1.notated_32nd_notes_per_beat == track2.notated_32nd_notes_per_beat
-        assert np.all(track1.events == track2.events)
+        assert np.all(sorted_events1 == sorted_events2)

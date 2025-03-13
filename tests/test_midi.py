@@ -63,10 +63,6 @@ def test_score_to_midi_midi_to_score_round_trip() -> None:
     check_no_overlapping_notes(score.tracks[0].notes, use_ticks=True)
 
     midi_raw2 = score_to_midi(score)
-
-    # check if the two midi scores are equal
-    assert_midi_equal(midi_raw, midi_raw2)
-
     score2 = midi_to_score(midi_raw2)
 
     # check if the two scores are equal

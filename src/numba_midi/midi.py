@@ -117,8 +117,8 @@ def get_event_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -
         events_ticks[i] = tick
         if event_type == 5:
             # tempo change event
-            current_tempo = float(midi_events[i]["value1"])
-            second_per_tick = current_tempo / ticks_per_quarter / 1_000_000
+            microseconds_per_quarter_note = float(midi_events[i]["value1"])
+            second_per_tick = microseconds_per_quarter_note / ticks_per_quarter / 1_000_000
 
     return events_ticks, events_times
 

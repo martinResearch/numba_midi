@@ -454,6 +454,18 @@ def check_no_overlapping_notes_in_score(score: Score) -> None:
         check_no_overlapping_notes(track.notes)
 
 
+def time_to_ticks(time: np.ndarray, tempo: np.ndarray, ticks_per_quarter: int) -> int:
+    """Convert a time in seconds to ticks."""
+    # get the tempo at the start of the time range
+    tempo_idx = np.searchsorted(tempo["time"], time, side="right") - 1
+    tempo_idx = np.clip(tempo_idx, 0, len(tempo) - 1)
+    bpm = tempo["bpm"][tempo_idx]
+    ref_ticks = tempo["tick"][tempo_idx]
+    ref_time = tempo["time"][tempo_idx]
+    ticks_per_second = bpm / 60.0 * ticks_per_quarter / 1_000_000.0
+    return (ref_ticks + (time - ref_time) * ticks_per_second).astype(np.int32)
+
+
 def crop_score(score: Score, start: float, duration: float) -> Score:
     """Crop a MIDI score to a specific time range.
 
@@ -462,7 +474,10 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
     """
     end = start + duration
     tracks = []
+
     for track in score.tracks:
+        tick_start = time_to_ticks(start, track.tempo, score.ticks_per_quarter)
+        tick_end = time_to_ticks(end, track.tempo, score.ticks_per_quarter)
         notes = track.notes
         notes_end = notes["start"] + notes["duration"]
         notes_keep = (notes["start"] < end) & (notes_end > start)
@@ -472,6 +487,9 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
         new_notes["start"] = np.maximum(new_notes["start"] - start, 0)
         new_notes_end = np.minimum(notes_end[notes_keep] - start, end - start)
         new_notes["duration"] = new_notes_end - new_notes["start"]
+        new_notes["start_tick"] = np.maximum(new_notes["start_tick"] - tick_start, 0)
+        new_notes_end_tick = np.minimum(new_notes["start_tick"] + new_notes["duration_tick"], tick_end - tick_start)
+        new_notes["duration_tick"] = new_notes_end_tick - new_notes["start_tick"]
 
         assert np.all(new_notes_end <= end - start), "Note end time exceeds score duration"
 

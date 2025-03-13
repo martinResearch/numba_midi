@@ -345,7 +345,7 @@ def _encode_midi_track_numba(
     clocks_per_click: int,
     notated_32nd_notes_per_beat: int,
     events: np.ndarray,
-) -> bytes:
+) -> np.ndarray:
     """Encodes a MIDI track to bytes."""
     data = []
 

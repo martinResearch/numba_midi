@@ -313,7 +313,15 @@ def merge_tracks_with_same_program(score: Score) -> Score:
     tracks = list(tracks_dict.values())
     tracks.sort(key=lambda x: x.program)
 
-    new_score = Score(tracks=tracks, duration=score.duration)
+    new_score = Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
     return new_score
 
 
@@ -327,7 +335,15 @@ def filter_instruments(score: Score, instrument_names: list[str]) -> Score:
             continue
         if track.program in programs:
             tracks.append(track)
-    return Score(tracks=tracks, duration=score.duration)
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 def remove_empty_tracks(score: Score) -> Score:
@@ -336,7 +352,15 @@ def remove_empty_tracks(score: Score) -> Score:
     for track in score.tracks:
         if track.notes.size > 0:
             tracks.append(track)
-    return Score(tracks=tracks, duration=score.duration)
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 def remove_pitch_bends(score: Score) -> Score:
@@ -347,7 +371,15 @@ def remove_pitch_bends(score: Score) -> Score:
         new_track.pitch_bends = np.array([], dtype=track.pitch_bends.dtype)
         tracks.append(new_track)
 
-    return Score(tracks=tracks, duration=score.duration)
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 def remove_control_changes(score: Score) -> Score:
@@ -358,7 +390,15 @@ def remove_control_changes(score: Score) -> Score:
         new_track.controls = np.array([], dtype=track.controls.dtype)
         tracks.append(new_track)
 
-    return Score(tracks=tracks, duration=score.duration)
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
@@ -368,7 +408,15 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
         keep = (track.notes["pitch"] >= pitch_min) & (track.notes["pitch"] < pitch_max)
         new_track.notes = track.notes[keep]
         tracks.append(new_track)
-    return Score(tracks=tracks, duration=score.duration)
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 @njit(cache=True)
@@ -454,7 +502,7 @@ def check_no_overlapping_notes_in_score(score: Score) -> None:
         check_no_overlapping_notes(track.notes)
 
 
-def time_to_ticks(time: np.ndarray, tempo: np.ndarray, ticks_per_quarter: int) -> int:
+def time_to_ticks(time: float, tempo: np.ndarray, ticks_per_quarter: int) -> int:
     """Convert a time in seconds to ticks."""
     # get the tempo at the start of the time range
     tempo_idx = np.searchsorted(tempo["time"], time, side="right") - 1
@@ -500,14 +548,23 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
         new_pedals = track.pedals[pedals_keep]
         new_pedals_end = np.minimum(pedals_end[pedals_keep], end) - start
         new_pedals["duration"] = new_pedals_end - new_pedals["time"]
+        new_pedals["time"] = np.maximum(new_pedals["time"] - start, 0)
+        new_pedals["tick"] = np.maximum(new_pedals["tick"] - tick_start, 0)
 
         controls_keep = (track.controls["time"] < end) & (track.controls["time"] >= start)
         new_controls = track.controls[controls_keep]
         new_controls["time"] = np.maximum(new_controls["time"] - start, 0)
+        new_controls["tick"] = np.maximum(new_controls["tick"] - tick_start, 0)
 
         pitch_bends_keep = (track.pitch_bends["time"] < end) & (track.pitch_bends["time"] >= start)
         new_pitch_bends = track.pitch_bends[pitch_bends_keep]
         new_pitch_bends["time"] = np.maximum(new_pitch_bends["time"] - start, 0)
+        new_pitch_bends["tick"] = np.maximum(new_pitch_bends["tick"] - tick_start, 0)
+
+        tempo_keep = (track.tempo["time"] < end) & (track.tempo["time"] >= start)
+        new_tempo = track.tempo[tempo_keep]
+        new_tempo["time"] = np.maximum(new_tempo["time"] - start, 0)
+        new_tempo["tick"] = np.maximum(new_tempo["tick"] - tick_start, 0)
 
         new_track = Track(
             channel=track.channel,
@@ -518,15 +575,32 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
             controls=new_controls,
             pedals=new_pedals,
             pitch_bends=new_pitch_bends,
+            tempo=track.tempo,
         )
         tracks.append(new_track)
-    return Score(tracks=tracks, duration=duration)
+    return Score(
+        tracks=tracks,
+        duration=duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 def select_tracks(score: Score, track_ids: list[int]) -> Score:
     """Select only the tracks with the specified programs."""
     tracks = [score.tracks[track_id] for track_id in track_ids]
-    return Score(tracks=tracks, duration=score.duration)
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+    )
 
 
 def distance(score1: Score, score2: Score, sort_tracks_with_programs: bool = False) -> float:

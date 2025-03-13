@@ -50,7 +50,6 @@ class MidiTrack:
 
     name: str
     events: np.ndarray  # 1D structured numpy array with event_dtype elements
-    ticks_per_quarter: int
     numerator: int
     denominator: int
     clocks_per_click: int
@@ -58,6 +57,16 @@ class MidiTrack:
 
     def __post_init__(self) -> None:
         assert self.events.dtype == event_dtype, "Events must be a structured numpy array with event_dtype elements"
+        assert isinstance(self.name, str), "Track name must be a string"
+        assert isinstance(self.numerator, int), "Numerator must be an integer"
+        assert self.numerator > 0, "Numerator must be positive"
+        assert isinstance(self.denominator, int), "Denominator must be an integer"
+        assert self.denominator > 0, "Denominator must be positive"
+        assert isinstance(self.clocks_per_click, int), "Clocks per click must be an integer"
+        assert self.clocks_per_click > 0, "Clocks per click must be positive"
+        assert isinstance(self.notated_32nd_notes_per_beat, int), "Notated 32nd notes per beat must be an integer"
+        assert self.notated_32nd_notes_per_beat > 0, "Notated 32nd notes per beat must be positive"
+        assert self.events.ndim == 1, "Events must be a 1D array"
 
 
 @dataclass
@@ -65,15 +74,23 @@ class Midi:
     """MIDI score representation."""
 
     tracks: list[MidiTrack]
+    ticks_per_quarter: int
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.tracks, list), "Tracks must be a list of MidiTrack objects"
+        for track in self.tracks:
+            assert isinstance(track, MidiTrack), "Each track must be a MidiTrack object"
+        assert isinstance(self.ticks_per_quarter, int), "ticks_per_quarter must be an integer"
+        assert self.ticks_per_quarter > 0, "ticks_per_quarter must be positive"
 
 
 @njit(cache=True, boundscheck=False)
 def get_even_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> tuple[np.ndarray, np.ndarray]:
     """Get the time of each event in ticks and seconds."""
-    tick = 0
-    time = 0
+    tick = np.uint32(0)
+    time = 0.0
     second_per_tick = 0.0
-    events_ticks = np.zeros((len(midi_events)), dtype=np.float32)
+    events_ticks = np.zeros((len(midi_events)), dtype=np.uint32)
     events_times = np.zeros((len(midi_events)), dtype=np.float32)
 
     for i in range(len(midi_events)):
@@ -86,7 +103,7 @@ def get_even_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) ->
         events_ticks[i] = tick
         if event_type == 5:
             # tempo change event
-            current_tempo = midi_events[i]["value1"]
+            current_tempo = float(midi_events[i]["value1"])
             second_per_tick = current_tempo / ticks_per_quarter / 1_000_000
 
     return events_ticks, events_times
@@ -124,7 +141,7 @@ def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
 
 
 @njit(cache=True, boundscheck=False)
-def _parse_midi_track(data: bytes, offset: int, ticks_per_quarter: int) -> tuple:
+def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):
         raise ValueError("Invalid track chunk")
@@ -161,6 +178,9 @@ def _parse_midi_track(data: bytes, offset: int, ticks_per_quarter: int) -> tuple
             # track name
             elif meta_type == 0x03:
                 track_name = meta_data
+            elif meta_type == 0x01:
+                # Text event
+                pass
 
         elif status_byte == 0xF0:  # SysEx event
             sysex_length, offset = read_var_length(data, offset)
@@ -214,7 +234,6 @@ def _parse_midi_track(data: bytes, offset: int, ticks_per_quarter: int) -> tuple
         offset,
         midi_events_np,
         track_name,
-        ticks_per_quarter,
         numerator,
         denominator,
         clocks_per_click,
@@ -222,21 +241,21 @@ def _parse_midi_track(data: bytes, offset: int, ticks_per_quarter: int) -> tuple
     )
 
 
-def load_midi_raw(file_path: str) -> Midi:
+def load_midi_score(file_path: str) -> Midi:
     """Loads a MIDI file."""
     with open(file_path, "rb") as file:
         data = file.read()
-    return load_midi_data(data)
+    return load_midi_bytes(data)
 
 
-def load_midi_data(data: bytes) -> Midi:
+def load_midi_bytes(data: bytes) -> Midi:
     """Loads MIDI data from a byte array."""
     # Parse header
     if data[:4] != b"MThd":
         raise ValueError("Invalid MIDI file header")
 
-    _, num_tracks, ticks_per_quarter = unpack_uint16_triplet(data[8:14])
-
+    format_type, num_tracks, ticks_per_quarter = unpack_uint16_triplet(data[8:14])
+    assert format_type == 0, "formt_type=0 only supported"
     offset = 14  # Header size is fixed at 14 bytes
 
     tracks = []
@@ -247,16 +266,14 @@ def load_midi_data(data: bytes) -> Midi:
             offset,
             midi_events_np,
             track_name,
-            ticks_per_quarter,
             numerator,
             denominator,
             clocks_per_click,
             notated_32nd_notes_per_beat,
-        ) = _parse_midi_track(data, offset, ticks_per_quarter)
+        ) = _parse_midi_track(data, offset)
         track = MidiTrack(
             name=track_name.decode("utf-8"),
             events=midi_events_np,
-            ticks_per_quarter=ticks_per_quarter,
             numerator=numerator,
             denominator=denominator,
             clocks_per_click=clocks_per_click,
@@ -265,4 +282,97 @@ def load_midi_data(data: bytes) -> Midi:
 
         tracks.append(track)
 
-    return Midi(tracks=tracks)
+    return Midi(tracks=tracks, ticks_per_quarter=ticks_per_quarter)
+
+
+def encode_delta_time(delta_time: int) -> bytes:
+    """Encodes delta time as a variable-length quantity."""
+    if delta_time == 0:
+        return b"\x00"
+    result = bytearray()
+    while delta_time > 0:
+        byte = delta_time & 0x7F
+        delta_time >>= 7
+        if result:
+            byte |= 0x80
+        result.append(byte)
+    return bytes(result[::-1])
+
+
+def _encode_midi_track(track: MidiTrack) -> bytes:
+    """Encodes a MIDI track to bytes."""
+    data = b""
+
+    # add track name
+    data += encode_delta_time(0)
+    track_name = track.name.encode("utf-8")
+    data += bytes([0xFF, 0x03]) + bytes([len(track_name)]) + track_name
+
+    # add time signature
+    data += encode_delta_time(0)
+    data += bytes([0xFF, 0x58, 4]) + bytes(
+        [track.numerator, track.denominator, track.clocks_per_click, track.notated_32nd_notes_per_beat]
+    )
+    # # add tempo change
+    # data += bytes([0xFF, 0x51, 3]) + bytes([0x07, 0xA1, 0x20])  # 120 BPM
+
+    for event in track.events:
+        delta_time = event["delta_time"]
+        event_type = event["event_type"]
+        channel = event["channel"]
+        value1 = event["value1"]
+        value2 = event["value2"]
+
+        data += encode_delta_time(delta_time)  # delta time for track name
+
+        if event_type == 0:
+            # Note On
+            data += bytes([0x90 | channel]) + bytes([value1, value2])
+        elif event_type == 1:
+            # Note Off
+            data += bytes([0x80 | channel]) + bytes([value1, value2])
+        elif event_type == 2:
+            # Pitch Bend
+            data += bytes([0xE0 | channel]) + bytes([value1, 0])
+        elif event_type == 3:
+            # Control Change
+            data += bytes([0xB0 | channel]) + bytes([value1, value2])
+        elif event_type == 4:
+            # Program Change
+            data += bytes([0xC0 | channel]) + bytes([value1])
+        elif event_type == 5:
+            # Tempo Change
+            data += bytes([0xFF, 0x51, 3]) + bytes([value1 >> 16, (value1 >> 8) & 0xFF, value1 & 0xFF])
+        elif event_type == 6:
+            # Meta event (e.g., track name)
+            data += bytes([0xFF, 0x03]) + bytes([len(value1)]) + value1
+        else:
+            raise ValueError(f"Invalid event type: {event_type}")
+    return b"MTrk" + len(data).to_bytes(4, "big") + data
+
+
+def save_midi_data(midi: Midi) -> bytes:
+    """Saves MIDI data to a byte array."""
+    midi_bytes = b"MThd"
+
+    # encode num_tracks and ticks_per_quarter
+    num_tracks = 1
+    ticks_per_quarter = midi.ticks_per_quarter
+    midi_bytes += b"\x00\x00\x00\x06\x00\x00" + num_tracks.to_bytes(2, "big") + ticks_per_quarter.to_bytes(2, "big")
+
+    for track in midi.tracks:
+        midi_bytes += _encode_midi_track(track)
+    return midi_bytes
+
+
+def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
+    """Check if two midi files are equal."""
+    assert midi1.ticks_per_quarter == midi2.ticks_per_quarter
+    assert len(midi1.tracks) == len(midi2.tracks)
+    for track1, track2 in zip(midi1.tracks, midi2.tracks):
+        assert track1.name == track2.name
+        assert track1.numerator == track2.numerator
+        assert track1.denominator == track2.denominator
+        assert track1.clocks_per_click == track2.clocks_per_click
+        assert track1.notated_32nd_notes_per_beat == track2.notated_32nd_notes_per_beat
+        assert np.all(track1.events == track2.events)

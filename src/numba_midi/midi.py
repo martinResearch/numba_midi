@@ -73,7 +73,7 @@ class MidiTrack:
         assert isinstance(self.denominator, int), "Denominator must be an integer"
         assert self.denominator > 0, "Denominator must be positive"
         assert isinstance(self.clocks_per_click, int), "Clocks per click must be an integer"
-        assert self.clocks_per_click > 0, "Clocks per click must be positive"
+        #assert self.clocks_per_click > 0, "Clocks per click must be positive"
         assert isinstance(self.notated_32nd_notes_per_beat, int), "Notated 32nd notes per beat must be an integer"
         assert self.notated_32nd_notes_per_beat > 0, "Notated 32nd notes per beat must be positive"
         assert self.events.ndim == 1, "Events must be a 1D array"
@@ -165,6 +165,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
 
     track_length = unpack_uint32(data[offset + 4 : offset + 8])
     offset += 8
+    assert track_length > 0, "Track length must be positive"
     track_end = offset + track_length
     midi_events = List()
     track_name = b""
@@ -213,7 +214,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 # Lyric event
                 pass
             elif meta_type == 0x2F:  # End of track
-                break
+                pass
 
         elif status_byte == 0xF0:  # SysEx event
             sysex_length, offset = read_var_length(data, offset)
@@ -224,6 +225,14 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
 
         elif status_byte == 0xF2:  # 2-byte message (Song Position Pointer)
             offset += 2
+
+        elif status_byte == 0xF8:  # Clock
+            offset += 1
+        elif status_byte == 0xFA:  # Start
+            offset += 1
+
+        elif status_byte == 0xFC:  # Continue
+            offset += 1
 
         elif status_byte <= 0xEF:  # MIDI channel messages
             if status_byte >= 0x80:
@@ -254,12 +263,23 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
             elif message_type == 0xE:
                 midi_events.append((tick, 2, channel, data[offset], 0))
                 offset += 2
+
+            elif message_type == 0xA:  # Polyphonic Aftertouch
+                pitch, pressure = unpack_uint8_pair(data[offset : offset + 2])
+                offset += 2
+                midi_events.append((tick, 7, channel, pitch, pressure))
+
+            elif message_type == 0xD:  # Channel Aftertouch
+                pressure = data[offset]
+                offset += 1
+                midi_events.append((tick, 6, channel, pressure, 0))
             else:
                 offset += 1
 
         else:
             raise ValueError(f"Invalid status byte: {status_byte}")
 
+    #assert len(midi_events) > 0, "Track must have at least one event"
     midi_events_np = np.zeros(len(midi_events), dtype=event_dtype)
     for i, event in enumerate(midi_events):
         midi_events_np[i]["tick"] = event[0]
@@ -297,7 +317,7 @@ def load_midi_bytes(data: bytes) -> Midi:
     offset = 14  # Header size is fixed at 14 bytes
 
     tracks = []
-    for _ in range(num_tracks):
+    for tack_id in range(num_tracks):
         if np.any(data[offset : offset + 4] != b"MTrk"):
             raise ValueError("Invalid track chunk")
         (
@@ -309,15 +329,20 @@ def load_midi_bytes(data: bytes) -> Midi:
             clocks_per_click,
             notated_32nd_notes_per_beat,
         ) = _parse_midi_track(data, offset)
+        try:
+            name = track_name.decode("utf-8")
+        except UnicodeDecodeError:
+            # Fallback to latin-1 if utf-8 decoding fails
+            name = track_name.decode("latin-1")
         track = MidiTrack(
-            name=track_name.decode("utf-8"),
+            name=name,
             events=midi_events_np,
             numerator=numerator,
             denominator=denominator,
             clocks_per_click=clocks_per_click,
             notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
         )
-
+        #assert len(midi_events_np)>0, "Track must have at least one event"
         tracks.append(track)
 
     return Midi(tracks=tracks, ticks_per_quarter=ticks_per_quarter)

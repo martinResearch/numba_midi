@@ -74,6 +74,19 @@ def get_lakh_dataset_failure_cases() -> None:
             score2 = midi_to_score(midi_raw2)
             # check if the two midi scores are equal
             assert_scores_equal(score, score2)
+            # compare with symusic
+            for i, track in enumerate(score.tracks):
+                symusic_track_ticks = symusic_score_ticks.tracks[i]
+                assert len(track.notes) == len(symusic_track_ticks.notes)
+                symusic_notes_numpy = symusic_track_ticks.notes.numpy()
+                assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
+                assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
+                assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
+                # symusic_track_sec = symusic_score_sec.tracks[i]
+                # symusic_notes_sec_numpy = symusic_track_sec.notes.numpy()
+                # assert np.allclose(track.notes["start"], symusic_notes_sec_numpy["time"], 1e-4)
+                # assert np.allclose(track.notes["duration"], symusic_notes_sec_numpy["duration"], atol=1e-5)
+
         except Exception as e:
             print(f"Failed to process {midi_file}: {e}")
             # copy the faild ons=es to the Path(__file__).parent / "data"  folder
@@ -100,18 +113,7 @@ def test_score_to_midi_midi_to_score_round_trip() -> None:
         # ]
 
         midi_raw = load_midi_score(midi_file)
-        # compare with symusic
-        # for i, track in enumerate(score.tracks):
-        #     symusic_track_ticks = symusic_score_ticks.tracks[i]
-        #     assert len(track.notes) == len(symusic_track_ticks.notes)
-        #     symusic_notes_numpy = symusic_track_ticks.notes.numpy()
-        #     assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
-        #     assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
-        #     assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
-        #     symusic_track_sec = symusic_score_sec.tracks[i]
-        #     symusic_notes_sec_numpy = symusic_track_sec.notes.numpy()
-        #     assert np.allclose(track.notes["start"], symusic_notes_sec_numpy["time"], 1e-4)
-        #     assert np.allclose(track.notes["duration"], symusic_notes_sec_numpy["duration"], atol=1e-5)
+        
         score = midi_to_score(midi_raw)
         midi_raw2 = score_to_midi(score)
         score2 = midi_to_score(midi_raw2)
@@ -119,9 +121,23 @@ def test_score_to_midi_midi_to_score_round_trip() -> None:
         # check if the two scores are equal
         assert_scores_equal(score, score2)
 
+        #compare with symusic
+        symusic_score_ticks = symusic.Score.from_file(midi_file)
+        for i, track in enumerate(score.tracks):
+            symusic_track_ticks = symusic_score_ticks.tracks[i]
+            assert len(track.notes) == len(symusic_track_ticks.notes)
+            symusic_notes_numpy = symusic_track_ticks.notes.numpy()
+            assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
+            assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
+            assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
+            # symusic_track_sec = symusic_score_sec.tracks[i]
+            # symusic_notes_sec_numpy = symusic_track_sec.notes.numpy()
+            # assert np.allclose(track.notes["start"], symusic_notes_sec_numpy["time"], 1e-4)
+            # assert np.allclose(track.notes["duration"], symusic_notes_sec_numpy["duration"], atol=1e-5)
+
 if __name__ == "__main__":
-    get_lakh_dataset_failure_cases()
-    #test_score_to_midi_midi_to_score_round_trip()
+    #get_lakh_dataset_failure_cases()
+    test_score_to_midi_midi_to_score_round_trip()
     # test_sort_midi_events()
 
     # test_numba_midi()

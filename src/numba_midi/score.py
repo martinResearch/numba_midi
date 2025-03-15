@@ -75,7 +75,7 @@ class Score:
             f"last tick {last_tick} and duration {self.duration}",
         )
 
-@njit(cache=True)
+#@njit(cache=True)
 def extract_notes_start_stop(sorted_note_events:np.ndarray) -> np.ndarray:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted by pitch and then by start time.
@@ -85,6 +85,7 @@ def extract_notes_start_stop(sorted_note_events:np.ndarray) -> np.ndarray:
     active_note=-1
     channel=-1
     last_pitch=-1
+    num_active_notes=0
     for k in range(len(sorted_note_events)):
         if not last_pitch==sorted_note_events[k]["value1"] and active_note>=0:
             note_start_ids.pop()
@@ -97,6 +98,10 @@ def extract_notes_start_stop(sorted_note_events:np.ndarray) -> np.ndarray:
                     note_start_ids.append(k)
                     active_note= sorted_note_events[k]["value1"]
                     channel=sorted_note_events[k]["channel"]
+                else:
+                    # we already have a not on event for this note
+                    # so we ignore this one
+                    pass
             else:
                 if active_note == -1:
                     # this is a note off event but we don't have a note on event

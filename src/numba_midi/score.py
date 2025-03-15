@@ -795,37 +795,29 @@ def assert_scores_equal(
         assert track1.name == track2.name, "Track names are different"
         assert track1.channel == track2.channel, "Track channels are different"
         assert track1.program == track2.program, "Track programs are different"
-        # group the notes by pitch
-        notes1: dict[int, list[np.ndarray]] = {}
-        for note in track1.notes:
-            pitch = note["pitch"]
-            if pitch not in notes1:
-                notes1[pitch] = []
-            notes1[pitch].append(note)
-        notes2: dict[int, list[np.ndarray]] = {}
-        for note in track2.notes:
-            pitch = note["pitch"]
-            if pitch not in notes2:
-                notes2[pitch] = []
-            notes2[pitch].append(note)
-        # make sure same pitches are used
-        assert set(notes1.keys()) == set(notes2.keys()), "Different pitches are used"
-        for pitch, _ in notes1.items():
-            # sort notes by start time
-            notes1_pitch = np.sort(np.array(notes1[pitch]), order="start")
-            notes2_pitch = np.sort(np.array(notes2[pitch]), order="start")
-
-            max_tick_diff = max(abs(notes1_pitch["start_tick"] - notes2_pitch["start_tick"]))
-            assert max_tick_diff==0
-            max_duration_tick_diff = max(abs(notes1_pitch["duration_tick"] - notes2_pitch["duration_tick"]))
-            assert max_duration_tick_diff==0
-            # max note time difference
-            max_start_time_diff = max(abs(notes1_pitch["start"] - notes2_pitch["start"]))
-            assert max_start_time_diff <= time_tol, f"Max note start time difference {max_start_time_diff}>{time_tol}"
-            notes_stop_1 = notes1_pitch["start"] + notes1_pitch["duration"]
-            notes_stop_2 = notes2_pitch["start"] + notes2_pitch["duration"]
-            max_stop_diff = max(abs(notes_stop_1 - notes_stop_2))
-            assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol}"
+        # sort not by pitch then tick
+        order1 = np.lexsort((track1.notes["start_tick"], track1.notes["pitch"]))
+        notes1 = track1.notes[order1]
+        order2 = np.lexsort((track2.notes["start_tick"], track2.notes["pitch"]))
+        notes2 = track2.notes[order2]
+        assert np.all(notes1["pitch"] == notes2["pitch"]), "Pitches are different"
+        max_tick_diff = max(abs(notes1["start_tick"] - notes2["start_tick"]))
+        assert max_tick_diff == 0, "Tick difference is not zero"
+        max_duration_tick_diff = max(abs(notes1["duration_tick"] - notes2["duration_tick"]))
+        assert max_duration_tick_diff == 0, "Duration tick difference is not zero"
+        # max note time difference
+        max_start_time_diff = max(abs(notes1["start"] - notes2["start"]))
+        assert max_start_time_diff <= time_tol, f"Max note start time difference {max_start_time_diff}>{time_tol}"
+        notes_stop_1 = notes1["start"] + notes1["duration"]
+        notes_stop_2 = notes2["start"] + notes2["duration"]
+        max_stop_diff = max(abs(notes_stop_1 - notes_stop_2))
+        assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol}"
+        # max note velocity difference
+        max_velocity_diff = max(abs(notes1["velocity_on"] - notes2["velocity_on"]))
+        assert max_velocity_diff <= value_tol, f"Max note velocity difference {max_velocity_diff}>{value_tol}"
+        # max note duration difference
+        max_duration_diff = max(abs(notes1["duration"] - notes2["duration"]))
+        assert max_duration_diff <= time_tol, f"Max note duration difference {max_duration_diff}>{time_tol}"
 
         # max control time difference
         assert track1.controls.shape == track2.controls.shape, "Different number of control events"

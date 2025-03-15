@@ -117,11 +117,11 @@ def test_score_to_midi_midi_to_score_round_trip() -> None:
         score2 = midi_to_score(midi_raw2)
 
         # check if the two scores are equal
-        assert_scores_equal(score, score2, sort_tracks_with_channel=True)
+        assert_scores_equal(score, score2)
 
 if __name__ == "__main__":
-    #get_lakh_dataset_failure_cases()
-    test_score_to_midi_midi_to_score_round_trip()
+    get_lakh_dataset_failure_cases()
+    #test_score_to_midi_midi_to_score_round_trip()
     # test_sort_midi_events()
 
     # test_numba_midi()

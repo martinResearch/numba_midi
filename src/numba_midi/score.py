@@ -139,11 +139,16 @@ def midi_to_score(midi_score: Midi) -> Score:
         if num_tempo_change > 0:
             tempo_change =midi_track.events[tempo_change_mask]
             # keep only the last tempo change for each tick
-            keep = np.diff(tempo_change["tick"], append=1)>0
+            keep = np.hstack((np.diff(tempo_change["tick"])>0, [True]))
             all_tempo_events.append(tempo_change[keep])
-    
-    tempo_events= np.concatenate(all_tempo_events, axis=0) if len(all_tempo_events)>0 else None
-    if tempo_events is None:
+    if len(all_tempo_events)>0:
+        tempo_events= np.concatenate(all_tempo_events, axis=0) 
+        # sort by tick
+        tempo_events = tempo_events[np.argsort(tempo_events["tick"])]
+        # keep only the last tempo change for each tick
+        # TODO should it be the first?
+        tempo_events = tempo_events[np.hstack((np.diff(tempo_events["tick"])>0, [True]))]
+    else:
         # if no tempo events are found, we create a default one
         tempo_events = np.zeros(1, dtype=event_dtype)
         tempo_events["event_type"] = 5
@@ -151,6 +156,7 @@ def midi_to_score(midi_score: Midi) -> Score:
         tempo_events["value1"] = 120 * 1000000.0 / 60.0
         tempo_events["value2"] = 0
         tempo_events["tick"] = 0
+    
     tempo_events_times = get_event_times(tempo_events, tempo_events, midi_score.ticks_per_quarter)
     tempo = np.zeros(len(tempo_events), dtype=tempo_dtype)
     tempo["time"] = tempo_events_times
@@ -773,7 +779,7 @@ def distance(score1: Score, score2: Score, sort_tracks_with_programs: bool = Fal
 def assert_scores_equal(
     score1: Score,
     score2: Score,
-    sort_tracks_with_channel: bool = False,
+    sort_tracks_with_channel: bool = True,
     time_tol: float = 1e-3,
     value_tol: float = 1e-2,
 ) -> None:

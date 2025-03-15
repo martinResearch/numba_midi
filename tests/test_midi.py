@@ -15,7 +15,7 @@ from numba_midi.midi import (
     save_midi_data,
     sort_midi_events,
 )
-from numba_midi.score import assert_scores_equal, check_no_overlapping_notes, midi_to_score, score_to_midi
+from numba_midi.score import assert_scores_equal, midi_to_score, score_to_midi
 
 
 def test_numba_midi() -> None:
@@ -91,7 +91,6 @@ def test_score_to_midi_midi_to_score_round_trip() -> None:
         assert np.allclose(track.notes["duration"], symusic_notes_sec_numpy["duration"], atol=1e-5), (
             f"Track {i} notes are not equal"
         )
-
 
     midi_raw2 = score_to_midi(score)
     score2 = midi_to_score(midi_raw2)

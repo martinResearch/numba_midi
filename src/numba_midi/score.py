@@ -177,17 +177,6 @@ def midi_to_score(midi_score: Midi) -> Score:
             note_stops = sorted_note_events[~is_start]
             note_starts_time = sorted_notes_times[is_start]
             note_stops_time = sorted_notes_times[~is_start]
-            # else:
-            #     num_active_notes= np.cumsum( 1-2*sorted_note_events["event_type"].astype(np.int8))
-            #     num_active_notes= np.minimum(num_active_notes, 1)
-            #     change = np.abs(np.diff(num_active_notes, prepend=0))>0
-            #     sorted_note_events = sorted_note_events[change]
-            #     notes_order = notes_order[change]
-            #     is_
-            #     note_starts = sorted_note_events[::2]
-            #     note_stops = sorted_note_events[1::2]
-            #     assert np.all(note_starts["event_type"] == 0)
-            #     assert np.all((note_stops["event_type"] == 1) | (note_stops["value2"] == 0))
 
             assert np.all(note_starts["channel"] == note_stops["channel"])
             assert np.all(note_starts["value1"] == note_stops["value1"])

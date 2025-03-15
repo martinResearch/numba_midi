@@ -7,7 +7,7 @@ from numba.core.decorators import njit
 import numpy as np
 
 from numba_midi.instruments import instrument_to_program
-from numba_midi.midi import event_dtype, get_event_ticks_and_times, load_midi_score, Midi, MidiTrack, save_midi_file
+from numba_midi.midi import event_dtype, get_event_times, load_midi_score, Midi, MidiTrack, save_midi_file
 
 note_dtype = np.dtype(
     [
@@ -38,7 +38,6 @@ class Track:
     controls: np.ndarray  # 1D structured numpy array with control_dtype elements
     pedals: np.ndarray  # 1D structured numpy array with pedal_dtype elements
     pitch_bends: np.ndarray  # 1D structured numpy array with pitch_bend_dtype elements
-    tempo: np.ndarray  # 1D structured numpy array with tempo_dtype elements
 
     def __post_init__(self) -> None:
         assert self.notes.dtype == note_dtype, "Notes must be a structured numpy array with note_dtype elements"
@@ -49,7 +48,10 @@ class Track:
         assert self.pitch_bends.dtype == pitch_bend_dtype, (
             "Pitch bends must be a structured numpy array with pitch_bend_dtype elements"
         )
-        assert self.tempo.dtype == tempo_dtype, "Tempo must be a structured numpy array with tempo_dtype elements"
+
+    def last_tick(self) -> int:
+        """Get the last tick of the track."""
+        return np.max(self.notes["start_tick"] + self.notes["duration_tick"])
 
 
 @dataclass
@@ -63,9 +65,15 @@ class Score:
     clocks_per_click: int
     ticks_per_quarter: int
     notated_32nd_notes_per_beat: int
+    tempo: np.ndarray  # 1D structured numpy array with tempo_dtype elements
 
     def __repr__(self) -> str:
-        return f"Score with {len(self.tracks)} tracks and duration {self.duration}"
+        num_notes = sum(len(track.notes) for track in self.tracks)
+        last_tick = max(track.last_tick() for track in self.tracks)
+        return (
+            f"Score with {len(self.tracks)} tracks, {num_notes} notes, ",
+            f"last tick {last_tick} and duration {self.duration}",
+        )
 
 
 def midi_to_score(midi_score: Midi) -> Score:
@@ -75,8 +83,22 @@ def midi_to_score(midi_score: Midi) -> Score:
     """
     tracks = []
     duration = 0.0
-    assert len(midi_score.tracks) == 1, "Only one track is supported for now"
+    # assert len(midi_score.tracks) == 1, "Only one track is supported for now"
     ticks_per_quarter = midi_score.ticks_per_quarter
+    tempo = None
+
+    for midi_track in midi_score.tracks:
+        tempo_change_mask = midi_track.events["event_type"] == 5
+        num_tempo_change = np.sum(tempo_change_mask)
+        if num_tempo_change > 0:
+            assert tempo is None, "Only one track should have tempo changes"
+            tempo_events = midi_track.events[tempo_change_mask]
+
+    tempo_events_times = get_event_times(tempo_events, tempo_events, midi_score.ticks_per_quarter)
+    tempo = np.zeros(len(tempo_events), dtype=tempo_dtype)
+    tempo["time"] = tempo_events_times
+    tempo["tick"] = tempo_events["tick"]
+    tempo["bpm"] = tempo_events["value1"] * 60 / 1000000.0
 
     for midi_track in midi_score.tracks:
         program = 0
@@ -95,13 +117,9 @@ def midi_to_score(midi_score: Midi) -> Score:
 
         events = midi_track.events
         # compute the tick and time of each event
-        events_ticks, events_times = get_event_ticks_and_times(events, midi_score.ticks_per_quarter)
+        events_ticks = events["tick"]
 
-        tempo_change_mask = midi_track.events["event_type"] == 5
-        tempo = np.zeros(np.sum(tempo_change_mask), dtype=tempo_dtype)
-        tempo["time"] = events_times[tempo_change_mask]
-        tempo["tick"] = events_ticks[tempo_change_mask]
-        tempo["bpm"] = events[tempo_change_mask]["value1"] * 60 / 1000000.0
+        events_times = get_event_times(events, tempo_events, midi_score.ticks_per_quarter)
 
         # sort all the events in lexicographic order by channel and tick
         # this allows to have a order for the events that simplifies the code to process them
@@ -151,21 +169,34 @@ def midi_to_score(midi_score: Midi) -> Score:
             pitch = note_events["value1"]
             notes_order = np.lexsort((~note_events["event_type"], notes_ticks, pitch))
             sorted_note_events = note_events[notes_order]
-            sorted_notes_ticks = notes_ticks[notes_order]
-            note_starts = sorted_note_events[::2]
-            note_stops = sorted_note_events[1::2]
-            assert np.all(note_starts["event_type"] == 0)
-            assert np.all((note_stops["event_type"] == 1) | (note_stops["value2"] == 0))
-            assert np.all(note_stops["value1"] == note_starts["value1"])
+            sorted_notes_times = notes_times[notes_order]
+            # deal with the case there are multiple consecutive note on events on the same note
+            # if allow_overlap:
+            is_start = sorted_note_events["event_type"] == 0 & (sorted_note_events["value2"] > 0)
+            note_starts = sorted_note_events[is_start]
+            note_stops = sorted_note_events[~is_start]
+            note_starts_time = sorted_notes_times[is_start]
+            note_stops_time = sorted_notes_times[~is_start]
+            # else:
+            #     num_active_notes= np.cumsum( 1-2*sorted_note_events["event_type"].astype(np.int8))
+            #     num_active_notes= np.minimum(num_active_notes, 1)
+            #     change = np.abs(np.diff(num_active_notes, prepend=0))>0
+            #     sorted_note_events = sorted_note_events[change]
+            #     notes_order = notes_order[change]
+            #     is_
+            #     note_starts = sorted_note_events[::2]
+            #     note_stops = sorted_note_events[1::2]
+            #     assert np.all(note_starts["event_type"] == 0)
+            #     assert np.all((note_stops["event_type"] == 1) | (note_stops["value2"] == 0))
 
+            assert np.all(note_starts["channel"] == note_stops["channel"])
+            assert np.all(note_starts["value1"] == note_stops["value1"])
             notes_np = np.zeros(len(note_starts), dtype=note_dtype)
-            notes_times_ordered = notes_times[notes_order]
-            notes_np["start"] = notes_times_ordered[::2]
-            notes_np["start_tick"] = notes_ticks[notes_order][::2]
-            notes_np["duration"] = notes_times_ordered[1::2] - notes_times_ordered[::2]
-            notes_np["duration_tick"] = np.uint32(
-                np.int64(sorted_notes_ticks[1::2]) - np.int64(sorted_notes_ticks[::2])
-            )
+
+            notes_np["start"] = note_starts_time
+            notes_np["start_tick"] = note_starts["tick"]
+            notes_np["duration"] = note_stops_time - note_starts_time
+            notes_np["duration_tick"] = np.uint32(np.int64(note_stops["tick"]) - np.int64(note_starts["tick"]))
             assert np.all(notes_np["duration_tick"] > 0), "duration_tick should be strictly positive"
             notes_np["pitch"] = note_starts["value1"]
             notes_np["velocity_on"] = note_starts["value2"]
@@ -173,19 +204,20 @@ def midi_to_score(midi_score: Midi) -> Score:
                 duration = max(duration, np.max(notes_np["start"] + notes_np["duration"]))
 
             program = channel_to_program[channel]
-            notes_np = notes_np[np.argsort(notes_np["start_tick"])]
-            track = Track(
-                channel=int(channel),
-                program=int(program),
-                is_drum=False,  # FIXME
-                name=midi_track.name,
-                notes=notes_np,
-                controls=controls,
-                pedals=np.zeros((0,), dtype=pedal_dtype),  # FIXME not supported yet
-                pitch_bends=pitch_bends,
-                tempo=tempo,
-            )
-            tracks.append(track)
+
+            notes_np = notes_np[np.lexsort((notes_np["pitch"], notes_np["start_tick"]))]
+            if notes_np.size > 0:
+                track = Track(
+                    channel=int(channel),
+                    program=int(program),
+                    is_drum=False,  # FIXME
+                    name=midi_track.name,
+                    notes=notes_np,
+                    controls=controls,
+                    pedals=np.zeros((0,), dtype=pedal_dtype),  # FIXME not supported yet
+                    pitch_bends=pitch_bends,
+                )
+                tracks.append(track)
 
     return Score(
         tracks=tracks,
@@ -195,22 +227,58 @@ def midi_to_score(midi_score: Midi) -> Score:
         clocks_per_click=clocks_per_click,
         ticks_per_quarter=ticks_per_quarter,
         notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
+        tempo=tempo,
     )
 
 
 def score_to_midi(score: Score) -> Midi:
     """Convert a Score to a Midi file and save it."""
     midi_tracks = []
+    # if two tracks use the same channel, we use multiple midi tracks
+    track_channels_list = [track.channel for track in score.tracks]
+    use_multiple_tracks = len(track_channels_list) != len(set(track_channels_list))
+    if not use_multiple_tracks:
+        num_events = 0
+        for track in score.tracks:
+            num_events += len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
+        num_events += len(score.tempo)
+        events = np.zeros(num_events, dtype=event_dtype)
 
-    num_events = 0
-    for track in score.tracks:
-        num_events += len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
-    num_events += len(score.tracks[0].tempo)
-    events = np.zeros(num_events, dtype=event_dtype)
-    ticks = np.zeros(num_events, dtype=np.int32)
+        id_start = 0
 
-    id_start = 0
+        tempo = score.tempo
+        events["tick"][id_start : id_start + len(tempo)] = tempo["tick"]
+        events["event_type"][id_start : id_start + len(tempo)] = 5
+        events["channel"][id_start : id_start + len(tempo)] = 0
+        events["value1"][id_start : id_start + len(tempo)] = tempo["bpm"] * 1000000.0 / 60.0
+        events["value2"][id_start : id_start + len(tempo)] = 0
+        id_start += len(tempo)
+
+    else:
+        # create track with the tempo changes
+        tempo_events = np.zeros(len(score.tempo), dtype=event_dtype)
+        tempo_events["event_type"] = 5
+        tempo_events["channel"] = 0
+        tempo_events["value1"] = score.tempo["bpm"] * 1000000.0 / 60.0
+        tempo_events["value2"] = 0
+        tempo_events["tick"] = score.tempo["tick"]
+        midi_tracks.append(
+            MidiTrack(
+                name="tempo",
+                events=tempo_events,
+                numerator=score.numerator,
+                denominator=score.denominator,
+                clocks_per_click=score.clocks_per_click,
+                notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+            )
+        )
+
     for track in score.tracks:
+        if use_multiple_tracks:
+            num_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
+            events = np.zeros(num_events, dtype=event_dtype)
+            id_start = 0
+
         num_track_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
         events["channel"][id_start : id_start + num_track_events] = track.channel
 
@@ -218,14 +286,14 @@ def score_to_midi(score: Score) -> Midi:
         events["event_type"][id_start] = 4
         events["value1"][id_start] = track.program
         events["value2"][id_start] = 0
-        ticks[id_start] = 0
+        events["tick"][id_start] = 0
         id_start += 1
 
         # add the notes on events
         events["event_type"][id_start : id_start + len(track.notes)] = 0
         events["value1"][id_start : id_start + len(track.notes)] = track.notes["pitch"]
         events["value2"][id_start : id_start + len(track.notes)] = track.notes["velocity_on"]
-        ticks[id_start : id_start + len(track.notes)] = track.notes["start_tick"]
+        events["tick"][id_start : id_start + len(track.notes)] = track.notes["start_tick"]
         id_start += len(track.notes)
 
         # add the notes off events
@@ -233,7 +301,9 @@ def score_to_midi(score: Score) -> Midi:
         events["event_type"][id_start : id_start + len(track.notes)] = 1
         events["value1"][id_start : id_start + len(track.notes)] = track.notes["pitch"]
         events["value2"][id_start : id_start + len(track.notes)] = 0
-        ticks[id_start : id_start + len(track.notes)] = track.notes["start_tick"] + track.notes["duration_tick"]
+        events["tick"][id_start : id_start + len(track.notes)] = (
+            track.notes["start_tick"] + track.notes["duration_tick"]
+        )
         assert np.all(track.notes["duration_tick"] > 0), "duration_tick should be strictly positive"
         id_start += len(track.notes)
 
@@ -242,7 +312,7 @@ def score_to_midi(score: Score) -> Midi:
         events["event_type"][id_start : id_start + len(track.controls)] = 3
         events["value1"][id_start : id_start + len(track.controls)] = track.controls["number"]
         events["value2"][id_start : id_start + len(track.controls)] = track.controls["value"]
-        ticks[id_start : id_start + len(track.controls)] = track.controls["tick"]
+        events["tick"][id_start : id_start + len(track.controls)] = track.controls["tick"]
         id_start += len(track.controls)
 
         # add the pitch bend events
@@ -250,36 +320,36 @@ def score_to_midi(score: Score) -> Midi:
         events["event_type"][id_start : id_start + len(track.pitch_bends)] = 2
         events["value1"][id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["value"]
         events["value2"][id_start : id_start + len(track.pitch_bends)] = 0
-        ticks[id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["tick"]
+        events["tick"][id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["tick"]
         id_start += len(track.pitch_bends)
 
-    # check that all the tempo arrays are the identical
-    tempo = score.tracks[0].tempo
-    for track in score.tracks[1:]:
-        assert np.all(tempo == track.tempo), "Different tempo arrays"
-    # add the tempo events
+        if use_multiple_tracks:
+            order = np.argsort(events["tick"])
+            events = events[order]
+            midi_track = MidiTrack(
+                name=track.name,
+                events=events,
+                numerator=score.numerator,
+                denominator=score.denominator,
+                clocks_per_click=score.clocks_per_click,
+                notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+            )
+            midi_tracks.append(midi_track)
 
-    ticks[id_start : id_start + len(tempo)] = tempo["tick"]
-    events["event_type"][id_start : id_start + len(tempo)] = 5
-    events["channel"][id_start : id_start + len(tempo)] = 0
-    events["value1"][id_start : id_start + len(tempo)] = tempo["bpm"] * 1000000.0 / 60.0
-    events["value2"][id_start : id_start + len(tempo)] = 0
+    if not use_multiple_tracks:
+        # sort by tick and compute the delta ticks
+        order = np.argsort(events["tick"])
+        events = events[order]
 
-    # sort by tick and compute the delta ticks
-    order = np.argsort(ticks)
-    delta_time = np.diff(ticks[order], prepend=0)
-    events = events[order]
-    events["delta_time"] = delta_time
-
-    midi_track = MidiTrack(
-        name=track.name,
-        events=events,
-        numerator=score.numerator,
-        denominator=score.denominator,
-        clocks_per_click=score.clocks_per_click,
-        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
-    )
-    midi_tracks = [midi_track]
+        midi_track = MidiTrack(
+            name=track.name,
+            events=events,
+            numerator=score.numerator,
+            denominator=score.denominator,
+            clocks_per_click=score.clocks_per_click,
+            notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        )
+        midi_tracks = [midi_track]
     midi_score = Midi(tracks=midi_tracks, ticks_per_quarter=score.ticks_per_quarter)
     return midi_score
 
@@ -288,6 +358,7 @@ def load_score(file_path: str) -> Score:
     """Loads a MIDI file and converts it to a Score."""
     midi_raw = load_midi_score(file_path)
     return midi_to_score(midi_raw)
+
 
 def save_score_to_midi(score: Score, file_path: str) -> None:
     """Saves a Score to a MIDI file."""

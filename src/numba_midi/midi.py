@@ -9,7 +9,7 @@ import numpy as np
 # Define structured dtype to have a homogenous representation of MIDI events
 event_dtype = np.dtype(
     [
-        ("delta_time", np.uint32),  # Time difference in ticks
+        ("tick", np.uint32),  # Tick count
         ("event_type", np.uint8),  # Event type (0-6)
         ("channel", np.uint8),  # MIDI Channel (0-15)
         ("value1", np.int32),  # Event-dependent value
@@ -40,6 +40,16 @@ MIDI_EVENT_TYPES = {
         "name": "Tempo Change",
         "value1": "Tempo (microseconds per quarter note)",
         "value2": "Ignored (0)",
+    },
+    6: {
+        "name": "Channel Aftertouch",
+        "value1": "Pressure (0-127)",
+        "value2": "Ignored (0)",
+    },
+    7: {
+        "name": "Polyphonic Aftertouch",
+        "value1": "Pitch (0-127)",
+        "value2": "Pressure (0-127)",
     },
 }
 
@@ -85,42 +95,35 @@ class Midi:
 
 
 @njit(cache=True, boundscheck=False)
-def get_event_ticks(midi_events: np.ndarray) -> np.ndarray:
-    """Get the time of each event in ticks and seconds."""
-    tick = np.uint32(0)
-    events_ticks = np.zeros((len(midi_events)), dtype=np.uint32)
-
-    for i in range(len(midi_events)):
-        delta_time = midi_events[i]["delta_time"]
-        tick += delta_time
-        events_ticks[i] = tick
-
-    return events_ticks
-
-
-@njit(cache=True, boundscheck=False)
-def get_event_ticks_and_times(midi_events: np.ndarray, ticks_per_quarter: int) -> tuple[np.ndarray, np.ndarray]:
+def get_event_times(
+    midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int
+) -> tuple[np.ndarray, np.ndarray]:
     """Get the time of each event in ticks and seconds."""
     tick = np.uint32(0)
     time = 0.0
     second_per_tick = 0.0
-    events_ticks = np.zeros((len(midi_events)), dtype=np.uint32)
     events_times = np.zeros((len(midi_events)), dtype=np.float32)
 
-    for i in range(len(midi_events)):
-        delta_time = midi_events[i]["delta_time"]
-        event_type = midi_events[i]["event_type"]
+    ref_tick = 0
+    ref_time = 0.0
+    last_tempo_event = -1
 
-        time += delta_time * second_per_tick
-        tick += delta_time
-        events_times[i] = time
-        events_ticks[i] = tick
-        if event_type == 5:
+    for i in range(len(midi_events)):
+        delta_tick = midi_events[i]["tick"] - tick
+        tick += delta_tick
+        while last_tempo_event + 1 < len(tempo_events) and tick >= tempo_events[last_tempo_event + 1]["tick"]:
             # tempo change event
-            microseconds_per_quarter_note = float(midi_events[i]["value1"])
+            last_tempo_event += 1
+            tempo_event = tempo_events[last_tempo_event]
+            ref_time = ref_time + (tempo_event["tick"] - ref_tick) * second_per_tick
+            ref_tick = tempo_event["tick"]
+            microseconds_per_quarter_note = float(tempo_events[last_tempo_event]["value1"])
             second_per_tick = microseconds_per_quarter_note / ticks_per_quarter / 1_000_000
 
-    return events_ticks, events_times
+        time = ref_time + (tick - ref_tick) * second_per_tick
+        events_times[i] = time
+
+    return events_times
 
 
 @njit(cache=True, boundscheck=False)
@@ -164,9 +167,16 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
     offset += 8
     track_end = offset + track_length
     midi_events = List()
+    track_name = b""
+    tick = np.uint32(0)
+    numerator = 4
+    denominator = 4
+    clocks_per_click = 24
+    notated_32nd_notes_per_beat = 8
 
     while offset < track_end:
-        delta_ticks, offset = read_var_length(data, offset)
+        _delta_ticks, offset = read_var_length(data, offset)
+        tick += _delta_ticks
         status_byte = data[offset]
         offset += 1
         if status_byte == 0xFF:  # Meta event
@@ -178,7 +188,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
 
             if meta_type == 0x51:  # Set Tempo event
                 current_tempo = (meta_data[0] << 16) | (meta_data[1] << 8) | meta_data[2]
-                midi_events.append((delta_ticks, 5, 0, current_tempo, 0))
+                midi_events.append((tick, 5, 0, current_tempo, 0))
 
             # time signature
             elif meta_type == 0x58:
@@ -190,11 +200,20 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                     notated_32nd_notes_per_beat,
                 ) = meta_data
             # track name
+            elif meta_type == 0x59:
+                # sharps = meta_data[0]
+                # minor = meta_data[1]
+                pass
             elif meta_type == 0x03:
                 track_name = meta_data
             elif meta_type == 0x01:
                 # Text event
                 pass
+            elif meta_type == 0x04:
+                # Lyric event
+                pass
+            elif meta_type == 0x2F:  # End of track
+                break
 
         elif status_byte == 0xF0:  # SysEx event
             sysex_length, offset = read_var_length(data, offset)
@@ -206,39 +225,44 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
         elif status_byte == 0xF2:  # 2-byte message (Song Position Pointer)
             offset += 2
 
-        elif 0x80 <= status_byte <= 0xEF:  # MIDI channel messages
-            channel = np.uint8(status_byte & 0x0F)
-            message_type = (status_byte & 0xF0) >> 4
+        elif status_byte <= 0xEF:  # MIDI channel messages
+            if status_byte >= 0x80:
+                channel = np.uint8(status_byte & 0x0F)
+                message_type = (status_byte & 0xF0) >> 4
+            else:
+                # running status: use the last event type and channel
+                offset -= 1
 
             if message_type == 0x9:  # Note On
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((delta_ticks, 0, channel, pitch, velocity))
+                midi_events.append((tick, 0, channel, pitch, velocity))
 
             elif message_type == 0x8:  # Note Off
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((delta_ticks, 1, channel, pitch, velocity))
+                midi_events.append((tick, 1, channel, pitch, velocity))
             elif message_type == 0xB:  # Control Change
                 number, value = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((delta_ticks, 3, channel, number, value))
+                midi_events.append((tick, 3, channel, number, value))
 
             elif message_type == 0xC:  # program change
-                midi_events.append((delta_ticks, 4, channel, data[offset], 0))
+                midi_events.append((tick, 4, channel, data[offset], 0))
                 offset += 1
 
             elif message_type == 0xE:
-                midi_events.append((delta_ticks, 2, channel, data[offset], 0))
+                midi_events.append((tick, 2, channel, data[offset], 0))
                 offset += 2
             else:
                 offset += 1
+
         else:
             raise ValueError(f"Invalid status byte: {status_byte}")
 
     midi_events_np = np.zeros(len(midi_events), dtype=event_dtype)
     for i, event in enumerate(midi_events):
-        midi_events_np[i]["delta_time"] = event[0]
+        midi_events_np[i]["tick"] = event[0]
         midi_events_np[i]["event_type"] = event[1]
         midi_events_np[i]["channel"] = event[2]
         midi_events_np[i]["value1"] = event[3]
@@ -269,7 +293,7 @@ def load_midi_bytes(data: bytes) -> Midi:
         raise ValueError("Invalid MIDI file header")
 
     format_type, num_tracks, ticks_per_quarter = unpack_uint16_triplet(data[8:14])
-    assert format_type == 0, "formt_type=0 only supported"
+    # assert format_type == 0, "format_type=0 only supported"
     offset = 14  # Header size is fixed at 14 bytes
 
     tracks = []
@@ -301,12 +325,8 @@ def load_midi_bytes(data: bytes) -> Midi:
 
 def sort_midi_events(midi_events: np.ndarray) -> np.ndarray:
     """Sorts MIDI events."""
-    ticks = get_event_ticks(midi_events)
-    order = np.lexsort((midi_events["channel"], midi_events["event_type"], ticks))
+    order = np.lexsort((midi_events["channel"], midi_events["event_type"], midi_events["tick"]))
     sorted_events = midi_events[order]
-    sorted_ticks = ticks[order]
-    delta_time = np.diff(sorted_ticks, prepend=0)
-    sorted_events["delta_time"] = delta_time
     return sorted_events
 
 
@@ -358,8 +378,10 @@ def _encode_midi_track_numba(
     data.extend(encode_delta_time(0))
     data.extend([0xFF, 0x58, 4, numerator, denominator, clocks_per_click, notated_32nd_notes_per_beat])
 
+    tick = np.uint32(0)
     for event in events:
-        delta_time = event["delta_time"]
+        delta_time = event["tick"] - tick
+        tick = event["tick"]
         event_type = event["event_type"]
         channel = event["channel"]
         value1 = event["value1"]
@@ -396,7 +418,7 @@ def save_midi_data(midi: Midi) -> bytes:
     midi_bytes = b"MThd"
 
     # encode num_tracks and ticks_per_quarter
-    num_tracks = 1
+    num_tracks = len(midi.tracks)
     ticks_per_quarter = midi.ticks_per_quarter
     midi_bytes += b"\x00\x00\x00\x06\x00\x00" + num_tracks.to_bytes(2, "big") + ticks_per_quarter.to_bytes(2, "big")
 

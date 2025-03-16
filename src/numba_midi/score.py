@@ -123,7 +123,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray) -> np.ndarray
     # assert np.all(sorted_note_events[note_start_ids]["value1"] == sorted_note_events[note_stop_ids]["value1"])
     return note_start_ids, note_stop_ids
 
-
+@njit(cache=True, boundscheck=False)
 def get_events_program(events: np.ndarray) -> np.ndarray:
     channel_to_program = np.zeros((16), dtype=np.int32)
     program = np.zeros((len(events)), dtype=np.int32)
@@ -653,7 +653,7 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
     )
 
 
-@njit(cache=True)
+@njit(cache=True, boundscheck=False)
 def _get_overlapping_notes_pairs_jit(
     start: np.ndarray, duration: np.ndarray, pitch: np.ndarray, order: np.ndarray
 ) -> np.ndarray:

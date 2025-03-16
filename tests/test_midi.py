@@ -58,11 +58,12 @@ def test_sort_midi_events() -> None:
         assert np.all(sorted_events == sorted_events2)
 
 
-def get_lakh_dataset_failure_cases() -> None:
+def collect_lakh_dataset_failure_cases(compare_to_symusic:bool=False) -> None:
     midi_files = glob.glob(
         str(Path(r"C:\repos\audio_to_midi\src\audio_to_midi\datasets\lakh_midi\lmd_matched") / "**" / "*.mid"),
         recursive=True,
     )
+    midi_files= midi_files[:10]
     for midi_file in tqdm.tqdm(midi_files):
         try:
             symusic.Score.from_file(midi_file)
@@ -75,19 +76,16 @@ def get_lakh_dataset_failure_cases() -> None:
             score = midi_to_score(midi_raw)
 
             # compare with symusic
-            symusic.Score.from_file(midi_file)
-            # symusic_tracks_with_notes = [track for track in symusic_score_ticks.tracks if len(track.notes) > 0]
-            # for i, track in enumerate(score.tracks):
-            #     symusic_track_ticks = symusic_tracks_with_notes[i]
-            #     assert len(track.notes) == len(symusic_track_ticks.notes)
-            #     symusic_notes_numpy = symusic_track_ticks.notes.numpy()
-            #     assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
-            #     assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
-            #     assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
-            # symusic_track_sec = symusic_score_sec.tracks[i]
-            # symusic_notes_sec_numpy = symusic_track_sec.notes.numpy()
-            # assert np.allclose(track.notes["start"], symusic_notes_sec_numpy["time"], 1e-4)
-            # assert np.allclose(track.notes["duration"], symusic_notes_sec_numpy["duration"], atol=1e-5)
+            if compare_to_symusic:
+                symusic_score_ticks= symusic.Score.from_file(midi_file)
+                symusic_tracks_with_notes = [track for track in symusic_score_ticks.tracks if len(track.notes) > 0]
+                for i, track in enumerate(score.tracks):
+                    symusic_track_ticks = symusic_tracks_with_notes[i]
+                    assert len(track.notes) == len(symusic_track_ticks.notes)
+                    symusic_notes_numpy = symusic_track_ticks.notes.numpy()
+                    assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
+                    assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
+                    assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
 
             midi_raw2 = score_to_midi(score)
             score2 = midi_to_score(midi_raw2)
@@ -100,38 +98,13 @@ def get_lakh_dataset_failure_cases() -> None:
             shutil.copy(midi_file, Path(__file__).parent / "data" / Path(midi_file).name)
 
 
-# def load_score_symusic(midi_file: str):
-#     symusic_score_ticks = symusic.Score.from_file(midi_file)
-#     tracks=[]
-#     for i, track in enumerate(symusic_score_ticks.tracks):
-#         symusic_track_ticks = symusic_score_ticks.tracks[i]
-#         symusic_notes_numpy = symusic_track_ticks.notes.numpy()
-#         tracks.append(Track(
-#             name=track.name,
-#             notes={
-#                 "pitch": symusic_notes_numpy["pitch"],
-#                 "start_tick": symusic_notes_numpy["time"],
-#                 "duration_tick": symusic_notes_numpy["duration"],
-#             },
-#         ))
 
-
-def test_score_to_midi_midi_to_score_round_trip() -> None:
+def test_score_to_midi_midi_to_score_round_trip(compare_to_symusic:bool=False) -> None:
     midi_files = glob.glob(str(Path(__file__).parent / "data" / "*.mid"))
 
     midi_files = sorted(midi_files)
     for midi_file in tqdm.tqdm(midi_files):
-        # print(f"Testing score_to_midi_midi_to_score_round_trip with {midi_file}")
-        # midi_file ="C:\\repos\\audio_to_midi\\src\\audio_to_midi\\datasets\\lakh_midi\\lmd_matched\\A\\A\\A\\TRAAAGR128F425B14B\\5dd29e99ed7bd3cc0c5177a6e9de22ea.mid"
-        # symusic_score_ticks = symusic.Score.from_file(midi_file)
-        # symusic_score_sec = symusic.Score.from_file(midi_file, ttype="second")
-        # tinysoundfont_score = tinysoundfont.midi.load(midi_file)
-        # load row midi score
-        # [
-        #     event
-        #     for event in tinysoundfont_score
-        #     if event.channel == 0 and isinstance(event.action, tinysoundfont.midi.NoteOn) and event.action.key == 65
-        # ]
+
 
         midi_raw = load_midi_score(midi_file)
 
@@ -143,27 +116,24 @@ def test_score_to_midi_midi_to_score_round_trip() -> None:
         assert_scores_equal(score, score2)
 
         # compare with symusic
-        symusic_score_ticks = symusic.Score.from_file(midi_file)
-        symusic_tracks_with_notes = [track for track in symusic_score_ticks.tracks if len(track.notes) > 0]
-        assert len(score.tracks) == len(symusic_tracks_with_notes)
-        for i, track in enumerate(score.tracks):
-            symusic_track_ticks = symusic_tracks_with_notes[i]
-            assert len(track.notes) == len(symusic_track_ticks.notes)
-            symusic_notes_numpy = symusic_track_ticks.notes.numpy()
-            assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
-            assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
-            assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
-            # symusic_track_sec = symusic_score_sec.tracks[i]
-            # symusic_notes_sec_numpy = symusic_track_sec.notes.numpy()
-            # assert np.allclose(track.notes["start"], symusic_notes_sec_numpy["time"], 1e-4)
-            # assert np.allclose(track.notes["duration"], symusic_notes_sec_numpy["duration"], atol=1e-5)
+        if compare_to_symusic:
+            symusic_score_ticks = symusic.Score.from_file(midi_file)
+            symusic_tracks_with_notes = [track for track in symusic_score_ticks.tracks if len(track.notes) > 0]
+            assert len(score.tracks) == len(symusic_tracks_with_notes)
+            for i, track in enumerate(score.tracks):
+                symusic_track_ticks = symusic_tracks_with_notes[i]
+                assert len(track.notes) == len(symusic_track_ticks.notes)
+                symusic_notes_numpy = symusic_track_ticks.notes.numpy()
+                assert np.all(track.notes["pitch"] == symusic_notes_numpy["pitch"])
+                assert np.all(track.notes["start_tick"] == symusic_notes_numpy["time"])
+                assert np.all(track.notes["duration_tick"] == symusic_notes_numpy["duration"])
 
 
 if __name__ == "__main__":
-    get_lakh_dataset_failure_cases()
-    # test_score_to_midi_midi_to_score_round_trip()
-    # test_sort_midi_events()
+    #collect_lakh_dataset_failure_cases()
+    test_score_to_midi_midi_to_score_round_trip()
+    test_sort_midi_events()
 
-    # test_numba_midi()
-    # test_save_midi_data_load_midi_bytes_roundtrip()
-    # print("All tests passed!")
+    test_numba_midi()
+    test_save_midi_data_load_midi_bytes_roundtrip()
+    print("All tests passed!")

@@ -2,3 +2,7 @@ ruff
 mypy
 pytest
 -e ./src/
+
+# for the tests
+symusic
+tqdm

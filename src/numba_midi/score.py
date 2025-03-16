@@ -157,15 +157,10 @@ def group_data(keys: list[np.ndarray]) -> dict[tuple, np.ndarray]:
 
 
 def extract_notes_start_stop(note_events: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    # midi_order = np.arange(len(note_events), dtype=np.int32)
     notes_order = np.lexsort(
         (note_events["event_type"], note_events["tick"], note_events["value1"], note_events["channel"])
     )
     sorted_note_events = note_events[notes_order]
-    # sorted_notes_times = notes_times[notes_order]
-    # deal with the case there are multiple consecutive note on events on the same note
-    # if allow_overlap:
-
     ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(sorted_note_events)
     note_start_ids = notes_order[ordered_note_start_ids]
     note_stop_ids = notes_order[ordered_note_stop_ids]
@@ -202,7 +197,6 @@ def midi_to_score(midi_score: Midi) -> Score:
         # sort by tick
         tempo_events = tempo_events[np.argsort(tempo_events["tick"])]
         # keep only the last tempo change for each tick
-        # TODO should it be the first?
         tempo_events = tempo_events[np.hstack((np.diff(tempo_events["tick"]) > 0, [True]))]
     else:
         # if no tempo events are found, we create a default one
@@ -234,19 +228,15 @@ def midi_to_score(midi_score: Midi) -> Score:
 
         # get the program for each channel
         events_programs = get_events_program(midi_track.events)
-        # program_change = midi_track.events[midi_track.events["event_type"] == 4]
-
-        # channel_to_program = np.zeros((16), dtype=np.int32)
-        # channel_to_program[program_change["channel"]] = program_change["value1"]
-        # # assert np.all(channel_to_program[program_change["channel"]] == program_change["value1"]), (
-        # #     "Multiple program changes for the same channel"
-        # # )
 
         events = midi_track.events
         # compute the tick and time of each event
         events_ticks = events["tick"]
-
         events_times = get_event_times(events, tempo_events, midi_score.ticks_per_quarter)
+
+        # sort all the events in lexicographic order by channel and tick
+        # this allows to have a order for the events that simplifies the code to process them
+        events_groups = group_data([events_programs, events["channel"]])
 
         # sort in lexicographic order by pitch first and then by tick, then even type
         # this allows to have a order for the events that simplifies the
@@ -276,9 +266,6 @@ def midi_to_score(midi_score: Midi) -> Score:
             note_groups = group_data([note_programs, note_channels])
         else:
             continue
-        # sort all the events in lexicographic order by channel and tick
-        # this allows to have a order for the events that simplifies the code to process them
-        events_groups = group_data([events_programs, events["channel"]])
 
         for group_keys, track_events_ids in events_groups.items():
             if group_keys not in note_groups:
@@ -294,6 +281,7 @@ def midi_to_score(midi_score: Midi) -> Score:
             track_events_times = events_times[track_events_ids]
             track_events_ticks = events_ticks[track_events_ids]
             assert np.all(np.diff(track_events_ticks) >= 0)
+
             #  control change events
             control_change_mask = track_events["event_type"] == 3
             control_change_events = track_events[control_change_mask]
@@ -311,7 +299,6 @@ def midi_to_score(midi_score: Midi) -> Score:
             pitch_bends["value"] = pitch_bends_events["value1"]
 
             # extract the event of type note on or note off
-
             notes_np = np.zeros(len(track_notes_ids), dtype=note_dtype)
             track_note_start_events = note_start_events[track_notes_ids]
             track_note_stop_events = note_stop_events[track_notes_ids]
@@ -440,7 +427,6 @@ def score_to_midi(score: Score) -> Midi:
         events["value1"][id_start] = track.program
         events["value2"][id_start] = 0
         events["tick"][id_start] = 0
-        # print(events[id_start] )
         id_start += 1
 
         # add the notes on events
@@ -451,7 +437,6 @@ def score_to_midi(score: Score) -> Midi:
         id_start += len(track.notes)
 
         # add the notes off events
-
         events["event_type"][id_start : id_start + len(track.notes)] = 1
         events["value1"][id_start : id_start + len(track.notes)] = track.notes["pitch"]
         events["value2"][id_start : id_start + len(track.notes)] = 0
@@ -462,7 +447,6 @@ def score_to_midi(score: Score) -> Midi:
         id_start += len(track.notes)
 
         # add the control change events
-
         events["event_type"][id_start : id_start + len(track.controls)] = 3
         events["value1"][id_start : id_start + len(track.controls)] = track.controls["number"]
         events["value2"][id_start : id_start + len(track.controls)] = track.controls["value"]
@@ -470,7 +454,6 @@ def score_to_midi(score: Score) -> Midi:
         id_start += len(track.controls)
 
         # add the pitch bend events
-
         events["event_type"][id_start : id_start + len(track.pitch_bends)] = 2
         events["value1"][id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["value"]
         events["value2"][id_start : id_start + len(track.pitch_bends)] = 0

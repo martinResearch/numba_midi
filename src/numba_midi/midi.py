@@ -18,43 +18,6 @@ event_dtype = np.dtype(
 )
 
 
-# Define event types and their corresponding value1 and value2 meanings
-MIDI_EVENT_TYPES = {
-    0: {"name": "Note On", "value1": "Pitch (0-127)", "value2": "Velocity (0-127)"},
-    1: {"name": "Note Off", "value1": "Pitch (0-127)", "value2": "Ignored (0)"},
-    2: {
-        "name": "Pitch Bend",
-        "value1": "Bend amount (-8192 to 8191)",
-        "value2": "Ignored (0)",
-    },
-    3: {
-        "name": "Control Change",
-        "value1": "Control Number (0-127)",
-        "value2": "Control Value (0-127)",
-    },
-    4: {
-        "name": "Program Change",
-        "value1": "Program Number (0-127)",
-        "value2": "Ignored (0)",
-    },
-    5: {
-        "name": "Tempo Change",
-        "value1": "Tempo (microseconds per quarter note)",
-        "value2": "Ignored (0)",
-    },
-    6: {
-        "name": "Channel Aftertouch",
-        "value1": "Pressure (0-127)",
-        "value2": "Ignored (0)",
-    },
-    7: {
-        "name": "Polyphonic Aftertouch",
-        "value1": "Pitch (0-127)",
-        "value2": "Pressure (0-127)",
-    },
-}
-
-
 @dataclass
 class MidiTrack:
     """MIDI track representation."""

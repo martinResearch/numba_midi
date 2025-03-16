@@ -32,6 +32,7 @@ class Track:
 
     channel: int
     program: int
+    midi_track_id: int
     is_drum: bool
     name: str
     notes: np.ndarray  # 1D structured numpy array with note_dtype elements
@@ -53,6 +54,12 @@ class Track:
         """Get the last tick of the track."""
         return np.max(self.notes["start_tick"] + self.notes["duration_tick"])
 
+    def __repr__(self) -> str:
+        return (
+            f"Track {self.name} with {len(self.notes)} notes, program={self.program}, "
+            f"{len(self.controls)} controls, {len(self.pedals)} pedals, {len(self.pitch_bends)} pitch bends"
+        )
+
 
 @dataclass
 class Score:
@@ -66,6 +73,7 @@ class Score:
     ticks_per_quarter: int
     notated_32nd_notes_per_beat: int
     tempo: np.ndarray  # 1D structured numpy array with tempo_dtype elements
+    lyrics: list[tuple[int, str]] | None = None
 
     def __repr__(self) -> str:
         num_notes = sum(len(track.notes) for track in self.tracks)
@@ -75,56 +83,99 @@ class Score:
             f"last tick {last_tick} and duration {self.duration}",
         )
 
-#@njit(cache=True)
-def extract_notes_start_stop(sorted_note_events:np.ndarray) -> np.ndarray:
+
+@njit(cache=True)
+def extract_notes_start_stop_numba(sorted_note_events: np.ndarray) -> np.ndarray:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted by pitch and then by start time.
     """
     note_start_ids = []
-    note_stop_ids=[]
-    active_note=-1
-    channel=-1
-    last_pitch=-1
-    num_active_notes=0
+    note_stop_ids = []
+    last_pitch = -1
+    num_active_notes = 0
+    last_channel = -1
     for k in range(len(sorted_note_events)):
-        if not last_pitch==sorted_note_events[k]["value1"] and active_note>=0:
-            note_start_ids.pop()
-            active_note=-1
-        last_pitch=sorted_note_events[k]["value1"] 
+        if not last_pitch == sorted_note_events[k]["value1"] or not last_channel == sorted_note_events[k]["channel"]:
+            # remove  unfinished notes
+            while num_active_notes > 0:
+                note_start_ids.pop()
+                num_active_notes -= 1
+            assert num_active_notes == 0
+            # assert len(note_start_ids)==len(note_stop_ids)
+            # assert np.all(sorted_note_events[note_start_ids]["value1"] == sorted_note_events[note_stop_ids]["value1"])
+        last_pitch = sorted_note_events[k]["value1"]
+        last_channel = sorted_note_events[k]["channel"]
 
-        if sorted_note_events[k]["event_type"] == 0:
-            if sorted_note_events[k]["value2"] > 0:
-                if  active_note == -1:
-                    note_start_ids.append(k)
-                    active_note= sorted_note_events[k]["value1"]
-                    channel=sorted_note_events[k]["channel"]
-                else:
-                    # we already have a not on event for this note
-                    # so we ignore this one
-                    pass
-            else:
-                if active_note == -1:
-                    # this is a note off event but we don't have a note on event
-                    # so we ignore it
-                    continue
-                assert active_note == sorted_note_events[k]["value1"]  
-                assert channel == sorted_note_events[k]["channel"]             
-                note_stop_ids.append(k)    
-                active_note=-1  
-                channel=-1     
-        else:
-            if active_note == -1:
-                # this is a note off event but we don't have a note on event
-                # so we ignore it
-                continue
-            assert channel == sorted_note_events[k]["channel"]
-            assert active_note == sorted_note_events[k]["value1"]
+        if sorted_note_events[k]["event_type"] == 0 and sorted_note_events[k]["value2"] > 0:
+            note_start_ids.append(k)
+            num_active_notes += 1
+        elif num_active_notes > 0:
             note_stop_ids.append(k)
-            active_note=-1
-            channel=-1     
-    if active_note>=0:
+            num_active_notes -= 1
+        assert num_active_notes >= 0, "num_active_notes should be non negative"
+
+    # assert len(note_start_ids) == len(note_stop_ids) + num_active_notes
+    while num_active_notes > 0:
+        # remove unfinished notes
         note_start_ids.pop()
+        num_active_notes -= 1
+    assert len(note_start_ids) == len(note_stop_ids)
+    # assert np.all(sorted_note_events[note_start_ids]["value1"] == sorted_note_events[note_stop_ids]["value1"])
     return note_start_ids, note_stop_ids
+
+
+def get_events_program(events: np.ndarray) -> np.ndarray:
+    channel_to_program = np.zeros((16), dtype=np.int32)
+    program = np.zeros((len(events)), dtype=np.int32)
+
+    for i in range(len(events)):
+        if events[i]["event_type"] == 4:
+            channel_to_program[events[i]["channel"]] = events[i]["value1"]
+        program[i] = channel_to_program[events[i]["channel"]]
+    return program
+
+
+def group_data(keys: list[np.ndarray]) -> dict[tuple, np.ndarray]:
+    order = np.lexsort(keys)
+    # make sure the keys have the same length
+    for k in keys:
+        assert len(k) == len(keys[0]), "Keys must have the same length"
+    is_boundary = np.zeros((len(keys[0]) - 1), dtype=bool)
+    for i in range(len(keys)):
+        is_boundary |= np.diff(keys[i][order]) != 0
+    boundaries = np.nonzero(is_boundary)[0]
+    starts = np.concatenate(([0], boundaries + 1))
+    ends = np.concatenate((boundaries + 1, [len(keys[0])]))
+    groups = {}
+    for i in range(len(starts)):
+        key = tuple([k[order[starts[i]]] for k in keys])
+        groups[key] = order[starts[i] : ends[i]]
+        for k in range(len(keys)):
+            assert np.all(keys[k][groups[key]] == key[k])
+    return groups
+
+
+def extract_notes_start_stop(note_events: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    # midi_order = np.arange(len(note_events), dtype=np.int32)
+    notes_order = np.lexsort(
+        (note_events["event_type"], note_events["tick"], note_events["value1"], note_events["channel"])
+    )
+    sorted_note_events = note_events[notes_order]
+    # sorted_notes_times = notes_times[notes_order]
+    # deal with the case there are multiple consecutive note on events on the same note
+    # if allow_overlap:
+
+    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(sorted_note_events)
+    note_start_ids = notes_order[ordered_note_start_ids]
+    note_stop_ids = notes_order[ordered_note_stop_ids]
+
+    # restore order to mach the one in the original midi file
+    order = np.argsort(note_start_ids)
+    note_start_ids = note_start_ids[order]
+    note_stop_ids = note_stop_ids[order]
+
+    return note_start_ids, note_stop_ids
+
 
 def midi_to_score(midi_score: Midi) -> Score:
     """Convert a MidiScore to a Score.
@@ -137,22 +188,21 @@ def midi_to_score(midi_score: Midi) -> Score:
     ticks_per_quarter = midi_score.ticks_per_quarter
     all_tempo_events = []
 
-
     for midi_track in midi_score.tracks:
         tempo_change_mask = midi_track.events["event_type"] == 5
         num_tempo_change = np.sum(tempo_change_mask)
         if num_tempo_change > 0:
-            tempo_change =midi_track.events[tempo_change_mask]
+            tempo_change = midi_track.events[tempo_change_mask]
             # keep only the last tempo change for each tick
-            keep = np.hstack((np.diff(tempo_change["tick"])>0, [True]))
+            keep = np.hstack((np.diff(tempo_change["tick"]) > 0, [True]))
             all_tempo_events.append(tempo_change[keep])
-    if len(all_tempo_events)>0:
-        tempo_events= np.concatenate(all_tempo_events, axis=0) 
+    if len(all_tempo_events) > 0:
+        tempo_events = np.concatenate(all_tempo_events, axis=0)
         # sort by tick
         tempo_events = tempo_events[np.argsort(tempo_events["tick"])]
         # keep only the last tempo change for each tick
         # TODO should it be the first?
-        tempo_events = tempo_events[np.hstack((np.diff(tempo_events["tick"])>0, [True]))]
+        tempo_events = tempo_events[np.hstack((np.diff(tempo_events["tick"]) > 0, [True]))]
     else:
         # if no tempo events are found, we create a default one
         tempo_events = np.zeros(1, dtype=event_dtype)
@@ -161,29 +211,37 @@ def midi_to_score(midi_score: Midi) -> Score:
         tempo_events["value1"] = 120 * 1000000.0 / 60.0
         tempo_events["value2"] = 0
         tempo_events["tick"] = 0
-    
+
     tempo_events_times = get_event_times(tempo_events, tempo_events, midi_score.ticks_per_quarter)
     tempo = np.zeros(len(tempo_events), dtype=tempo_dtype)
     tempo["time"] = tempo_events_times
     tempo["tick"] = tempo_events["tick"]
     tempo["bpm"] = tempo_events["value1"] * 60 / 1000000.0
 
-    for midi_track in midi_score.tracks:
-        if len(midi_track.events)==0:
-            continue
-        program = 0
+    lyrics = []
+    for midi_track_id, midi_track in enumerate(midi_score.tracks):
+        if midi_track.lyrics is not None:
+            lyrics.extend(midi_track.lyrics)
+
+    lyrics = np.array(lyrics, dtype=[("tick", np.int32), ("text", "U256")])
+    # sort the lyrics by tick
+    lyrics = lyrics[np.argsort(lyrics["tick"])]
+
+    for midi_track_id, midi_track in enumerate(midi_score.tracks):
         numerator = midi_track.numerator
         denominator = midi_track.denominator
         clocks_per_click = midi_track.clocks_per_click
         notated_32nd_notes_per_beat = midi_track.notated_32nd_notes_per_beat
 
         # get the program for each channel
-        program_change = midi_track.events[midi_track.events["event_type"] == 4]
-        channel_to_program = np.zeros((16), dtype=np.int32)
-        channel_to_program[program_change["channel"]] = program_change["value1"]
-        #assert np.all(channel_to_program[program_change["channel"]] == program_change["value1"]), (
-        #     "Multiple program changes for the same channel"
-        # )
+        events_programs = get_events_program(midi_track.events)
+        # program_change = midi_track.events[midi_track.events["event_type"] == 4]
+
+        # channel_to_program = np.zeros((16), dtype=np.int32)
+        # channel_to_program[program_change["channel"]] = program_change["value1"]
+        # # assert np.all(channel_to_program[program_change["channel"]] == program_change["value1"]), (
+        # #     "Multiple program changes for the same channel"
+        # # )
 
         events = midi_track.events
         # compute the tick and time of each event
@@ -191,86 +249,92 @@ def midi_to_score(midi_score: Midi) -> Score:
 
         events_times = get_event_times(events, tempo_events, midi_score.ticks_per_quarter)
 
+        # sort in lexicographic order by pitch first and then by tick, then even type
+        # this allows to have a order for the events that simplifies the
+        # extracting matching note starts and stops
+        # we sort by inverse of event type in order to deal with the case there is no gap
+        # between two consecutive notes
+        # extract the event of type note on or note off
+        notes_events_ids = np.nonzero((events["event_type"] == 0) | (events["event_type"] == 1))[0]
+        if len(notes_events_ids) > 0:
+            note_events = events[notes_events_ids]
+
+            note_start_ids, note_stop_ids = extract_notes_start_stop(note_events)
+            assert np.all(np.diff(note_start_ids) >= 0), "note start ids should be sorted"
+            if note_start_ids.size == 0:
+                continue
+            note_start_ids = notes_events_ids[note_start_ids]
+            note_stop_ids = notes_events_ids[note_stop_ids]
+
+            # the note stop need to be give the same program as the note start
+            note_programs = events_programs[note_start_ids]
+            note_channels = events["channel"][note_start_ids]
+            note_start_events = events[note_start_ids]
+            note_stop_events = events[note_stop_ids]
+            note_starts_time = events_times[note_start_ids]
+            note_stops_time = events_times[note_stop_ids]
+
+            note_groups = group_data([note_programs, note_channels])
+        else:
+            continue
         # sort all the events in lexicographic order by channel and tick
         # this allows to have a order for the events that simplifies the code to process them
-        events_order = np.lexsort((events_ticks, events["channel"]))
-        events = events[events_order]
-        events_times = events_times[events_order]
-        events_ticks = events_ticks[events_order]
-        channel_change = np.nonzero(np.diff(events["channel"]))[0] + 1
-        channel_starts = np.concatenate(([0], channel_change))
-        channel_ends = np.concatenate((channel_change, [len(events)]))
-        channels = events["channel"][channel_starts]
-        for channel, channel_start, channel_end in zip(channels, channel_starts, channel_ends, strict=True):
-            # extract the events for the channel
-            channel_events = events[channel_start:channel_end]
-            channel_events_times = events_times[channel_start:channel_end]
-            channel_events_ticks = events_ticks[channel_start:channel_end]
-            assert np.all(np.diff(channel_events_ticks) >= 0)
+        events_groups = group_data([events_programs, events["channel"]])
+
+        for group_keys, track_events_ids in events_groups.items():
+            if group_keys not in note_groups:
+                continue
+
+            track_notes_ids = note_groups[group_keys]
+            track_notes_ids = np.sort(track_notes_ids)  # to keep the original order of the notes in the midi
+            # print(f"{group_keys} {len(track_notes_ids)}")
+            track_program, track_channel = group_keys
+            assert track_program >= 0 and track_program < 128, "program should be between 0 and 127"
+            assert track_channel >= 0 and track_channel < 16, "channel should be between 0 and 15"
+            track_events = events[track_events_ids]
+            track_events_times = events_times[track_events_ids]
+            track_events_ticks = events_ticks[track_events_ids]
+            assert np.all(np.diff(track_events_ticks) >= 0)
             #  control change events
-            control_change_mask = channel_events["event_type"] == 3
-            control_change_events = channel_events[control_change_mask]
+            control_change_mask = track_events["event_type"] == 3
+            control_change_events = track_events[control_change_mask]
             controls = np.zeros(len(control_change_events), dtype=control_dtype)
-            controls["time"] = channel_events_times[control_change_mask]
-            controls["tick"] = channel_events_ticks[control_change_mask]
+            controls["time"] = track_events_times[control_change_mask]
+            controls["tick"] = track_events_ticks[control_change_mask]
             controls["number"] = control_change_events["value1"]
             controls["value"] = control_change_events["value2"]
 
-            pitch_bends_mask = channel_events["event_type"] == 2
-            pitch_bends_events = channel_events[pitch_bends_mask]
+            pitch_bends_mask = track_events["event_type"] == 2
+            pitch_bends_events = track_events[pitch_bends_mask]
             pitch_bends = np.zeros(len(pitch_bends_events), dtype=pitch_bend_dtype)
-            pitch_bends["time"] = channel_events_times[pitch_bends_mask]
-            pitch_bends["tick"] = channel_events_ticks[pitch_bends_mask]
+            pitch_bends["time"] = track_events_times[pitch_bends_mask]
+            pitch_bends["tick"] = track_events_ticks[pitch_bends_mask]
             pitch_bends["value"] = pitch_bends_events["value1"]
 
             # extract the event of type note on or note off
-            notes_mask = (channel_events["event_type"] == 0) | (channel_events["event_type"] == 1)
 
-            note_events = channel_events[notes_mask]
-            note_events["event_type"][note_events["value2"] == 0] = 1
-            notes_times = channel_events_times[notes_mask]
-            notes_ticks = channel_events_ticks[notes_mask]
-
-            # sort in lexicographic order by pitch first and then by tick, then even type
-            # this allows to have a order for the events that simplifies the
-            # extracting matching note starts and stops
-            # we sort by inverse of event type in order to deal with the case there is no gap
-            # between two consecutive notes
-            pitch = note_events["value1"]
-            #midi_order = np.arange(len(note_events), dtype=np.int32)
-            notes_order = np.lexsort((note_events["event_type"], notes_ticks, pitch))
-            sorted_note_events = note_events[notes_order]
-            sorted_notes_times = notes_times[notes_order]
-            # deal with the case there are multiple consecutive note on events on the same note
-            # if allow_overlap:
-
-            note_start_ids,note_stop_ids= extract_notes_start_stop(sorted_note_events)
-            note_starts = sorted_note_events[note_start_ids]
-            note_stops = sorted_note_events[note_stop_ids]
-            note_starts_time = sorted_notes_times[note_start_ids]
-            note_stops_time = sorted_notes_times[note_stop_ids]
-
-            assert np.all(note_starts["channel"] == note_stops["channel"])
-            assert np.all(note_starts["value1"] == note_stops["value1"])
-            notes_np = np.zeros(len(note_starts), dtype=note_dtype)
-
-            notes_np["start"] = note_starts_time
-            notes_np["start_tick"] = note_starts["tick"]
-            notes_np["duration"] = note_stops_time - note_starts_time
-            notes_np["duration_tick"] = np.uint32(np.int64(note_stops["tick"]) - np.int64(note_starts["tick"]))
-            #assert np.all(notes_np["duration_tick"] > 0), "duration_tick should be strictly positive"
-            notes_np["pitch"] = note_starts["value1"]
-            notes_np["velocity_on"] = note_starts["value2"]
+            notes_np = np.zeros(len(track_notes_ids), dtype=note_dtype)
+            track_note_start_events = note_start_events[track_notes_ids]
+            track_note_stop_events = note_stop_events[track_notes_ids]
+            notes_np["start"] = note_starts_time[track_notes_ids]
+            notes_np["start_tick"] = track_note_start_events["tick"]
+            notes_np["duration"] = note_stops_time[track_notes_ids] - note_starts_time[track_notes_ids]
+            notes_np["duration_tick"] = np.uint32(
+                np.int64(track_note_stop_events["tick"]) - np.int64(track_note_start_events["tick"])
+            )
+            # assert np.all(notes_np["duration_tick"] > 0), "duration_tick should be strictly positive"
+            notes_np["pitch"] = track_note_start_events["value1"]
+            notes_np["velocity_on"] = track_note_start_events["value2"]
             if len(notes_np) > 0:
                 duration = max(duration, np.max(notes_np["start"] + notes_np["duration"]))
 
-            program = channel_to_program[channel]
-
-            notes_np = notes_np[np.lexsort((notes_np["pitch"], notes_np["start_tick"]))]
+            # reorder using the original midi order
+            notes_np = notes_np[np.argsort(note_start_ids[track_notes_ids])]
             if notes_np.size > 0:
                 track = Track(
-                    channel=int(channel),
-                    program=int(program),
+                    channel=int(track_channel),
+                    midi_track_id=midi_track_id,
+                    program=int(track_program),
                     is_drum=False,  # FIXME
                     name=midi_track.name,
                     notes=notes_np,
@@ -280,8 +344,11 @@ def midi_to_score(midi_score: Midi) -> Score:
                 )
                 tracks.append(track)
 
+    # sort the tracks by channel and program
+    # tracks.sort(key=lambda x: (x.channel, x.program))
     return Score(
         tracks=tracks,
+        lyrics=lyrics,
         duration=duration,
         numerator=numerator,
         denominator=denominator,
@@ -292,15 +359,22 @@ def midi_to_score(midi_score: Midi) -> Score:
     )
 
 
+def has_duplicate_values(values: list) -> bool:
+    list_values = list(values)
+    return len(list_values) != len(set(list_values))
+
+
 def score_to_midi(score: Score) -> Midi:
     """Convert a Score to a Midi file and save it."""
     midi_tracks = []
     # if two tracks use the same channel, we use multiple midi tracks
-    if len(set(track.name for track in score.tracks))>1:
-        use_multiple_tracks=True
-    else:
-        track_channels_list = [track.channel for track in score.tracks]
-        use_multiple_tracks = len(track_channels_list) != len(set(track_channels_list))
+    use_multiple_tracks = len(set(track.midi_track_id for track in score.tracks)) > 1
+    if has_duplicate_values((track.channel for track in score.tracks)):
+        # multiple tracks with the same channel not supported because
+        # it requires carefull program changes each time the instrument changes in the channel
+        # using multiple tracks instead
+        use_multiple_tracks = True
+
     if not use_multiple_tracks:
         num_events = 0
         for track in score.tracks:
@@ -318,6 +392,7 @@ def score_to_midi(score: Score) -> Midi:
         events["value2"][id_start : id_start + len(tempo)] = 0
         id_start += len(tempo)
 
+        lyrics = score.lyrics
     else:
         # create track with the tempo changes
         tempo_events = np.zeros(len(score.tempo), dtype=event_dtype)
@@ -329,6 +404,7 @@ def score_to_midi(score: Score) -> Midi:
         midi_tracks.append(
             MidiTrack(
                 name="tempo",
+                lyrics=None,
                 events=tempo_events,
                 numerator=score.numerator,
                 denominator=score.denominator,
@@ -336,6 +412,20 @@ def score_to_midi(score: Score) -> Midi:
                 notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
             )
         )
+        # create a track for the lyrics
+        if score.lyrics is not None:
+            midi_tracks.append(
+                MidiTrack(
+                    name="lyrics",
+                    events=np.zeros(0, dtype=event_dtype),
+                    lyrics=score.lyrics,
+                    numerator=score.numerator,
+                    denominator=score.denominator,
+                    clocks_per_click=score.clocks_per_click,
+                    notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+                )
+            )
+        lyrics = None
 
     for track in score.tracks:
         if use_multiple_tracks:
@@ -351,6 +441,7 @@ def score_to_midi(score: Score) -> Midi:
         events["value1"][id_start] = track.program
         events["value2"][id_start] = 0
         events["tick"][id_start] = 0
+        # print(events[id_start] )
         id_start += 1
 
         # add the notes on events
@@ -368,7 +459,7 @@ def score_to_midi(score: Score) -> Midi:
         events["tick"][id_start : id_start + len(track.notes)] = (
             track.notes["start_tick"] + track.notes["duration_tick"]
         )
-        #assert np.all(track.notes["duration_tick"] > 0), "duration_tick should be strictly positive"
+        # assert np.all(track.notes["duration_tick"] > 0), "duration_tick should be strictly positive"
         id_start += len(track.notes)
 
         # add the control change events
@@ -388,11 +479,12 @@ def score_to_midi(score: Score) -> Midi:
         id_start += len(track.pitch_bends)
 
         if use_multiple_tracks:
-            order = np.argsort(events["tick"])
+            order = np.lexsort((np.arange(len(events)), events["tick"]))
             events = events[order]
             midi_track = MidiTrack(
                 name=track.name,
                 events=events,
+                lyrics=lyrics,
                 numerator=score.numerator,
                 denominator=score.denominator,
                 clocks_per_click=score.clocks_per_click,
@@ -401,13 +493,15 @@ def score_to_midi(score: Score) -> Midi:
             midi_tracks.append(midi_track)
 
     if not use_multiple_tracks:
-        # sort by tick and compute the delta ticks
-        order = np.argsort(events["tick"])
+        # sort by tick and keep the original order of the events
+        # for event with the same tick,
+        order = np.lexsort((np.arange(len(events)), events["tick"]))
         events = events[order]
 
         midi_track = MidiTrack(
             name=track.name,
             events=events,
+            lyrics=lyrics,
             numerator=score.numerator,
             denominator=score.denominator,
             clocks_per_click=score.clocks_per_click,
@@ -801,9 +895,11 @@ def assert_scores_equal(
         assert track1.channel == track2.channel, "Track channels are different"
         assert track1.program == track2.program, "Track programs are different"
         # sort not by pitch then tick
-        order1 = np.lexsort((track1.notes["start_tick"], track1.notes["pitch"]))
+        # notes1= track1.notes
+        # notes2= track2.notes
+        order1 = np.lexsort((range(len(track1.notes)), track1.notes["start_tick"], track1.notes["pitch"]))
         notes1 = track1.notes[order1]
-        order2 = np.lexsort((track2.notes["start_tick"], track2.notes["pitch"]))
+        order2 = np.lexsort((range(len(track2.notes)), track2.notes["start_tick"], track2.notes["pitch"]))
         notes2 = track2.notes[order2]
         assert np.all(notes1["pitch"] == notes2["pitch"]), "Pitches are different"
         max_tick_diff = max(abs(notes1["start_tick"] - notes2["start_tick"]))
@@ -818,7 +914,8 @@ def assert_scores_equal(
         max_stop_diff = max(abs(notes_stop_1 - notes_stop_2))
         assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol}"
         # max note velocity difference
-        max_velocity_diff = max(abs(notes1["velocity_on"] - notes2["velocity_on"]))
+        velocify_abs_diff = abs(notes1["velocity_on"].astype(np.int16) - notes2["velocity_on"].astype(np.int16))
+        max_velocity_diff = max(velocify_abs_diff)
         assert max_velocity_diff <= value_tol, f"Max note velocity difference {max_velocity_diff}>{value_tol}"
         # max note duration difference
         max_duration_diff = max(abs(notes1["duration"] - notes2["duration"]))

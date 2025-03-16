@@ -17,6 +17,7 @@ event_dtype = np.dtype(
     ]
 )
 
+
 # Define event types and their corresponding value1 and value2 meanings
 MIDI_EVENT_TYPES = {
     0: {"name": "Note On", "value1": "Pitch (0-127)", "value2": "Velocity (0-127)"},
@@ -60,6 +61,7 @@ class MidiTrack:
 
     name: str
     events: np.ndarray  # 1D structured numpy array with event_dtype elements
+    lyrics: list[tuple[int, str]]  # List of tuples (tick, lyric)
     numerator: int
     denominator: int
     clocks_per_click: int
@@ -73,7 +75,7 @@ class MidiTrack:
         assert isinstance(self.denominator, int), "Denominator must be an integer"
         assert self.denominator > 0, "Denominator must be positive"
         assert isinstance(self.clocks_per_click, int), "Clocks per click must be an integer"
-        #assert self.clocks_per_click > 0, "Clocks per click must be positive"
+        # assert self.clocks_per_click > 0, "Clocks per click must be positive"
         assert isinstance(self.notated_32nd_notes_per_beat, int), "Notated 32nd notes per beat must be an integer"
         assert self.notated_32nd_notes_per_beat > 0, "Notated 32nd notes per beat must be positive"
         assert self.events.ndim == 1, "Events must be a 1D array"
@@ -174,6 +176,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
     denominator = 4
     clocks_per_click = 24
     notated_32nd_notes_per_beat = 8
+    lyrics = []
 
     while offset < track_end:
         _delta_ticks, offset = read_var_length(data, offset)
@@ -209,6 +212,9 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 track_name = meta_data
             elif meta_type == 0x01:
                 # Text event
+                text = meta_data
+                if not text.startswith(b"@") and not text.startswith(b"%") and tick > 0:
+                    lyrics.append((tick, text))
                 pass
             elif meta_type == 0x04:
                 # Lyric event
@@ -279,7 +285,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
         else:
             raise ValueError(f"Invalid status byte: {status_byte}")
 
-    #assert len(midi_events) > 0, "Track must have at least one event"
+    # assert len(midi_events) > 0, "Track must have at least one event"
     midi_events_np = np.zeros(len(midi_events), dtype=event_dtype)
     for i, event in enumerate(midi_events):
         midi_events_np[i]["tick"] = event[0]
@@ -296,6 +302,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
         denominator,
         clocks_per_click,
         notated_32nd_notes_per_beat,
+        lyrics,
     )
 
 
@@ -304,6 +311,14 @@ def load_midi_score(file_path: str) -> Midi:
     with open(file_path, "rb") as file:
         data = file.read()
     return load_midi_bytes(data)
+
+
+def text_decode(data: bytes) -> str:
+    """Decodes a byte array to a string."""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
 
 
 def load_midi_bytes(data: bytes) -> Midi:
@@ -317,7 +332,7 @@ def load_midi_bytes(data: bytes) -> Midi:
     offset = 14  # Header size is fixed at 14 bytes
 
     tracks = []
-    for tack_id in range(num_tracks):
+    for _ in range(num_tracks):
         if np.any(data[offset : offset + 4] != b"MTrk"):
             raise ValueError("Invalid track chunk")
         (
@@ -328,21 +343,21 @@ def load_midi_bytes(data: bytes) -> Midi:
             denominator,
             clocks_per_click,
             notated_32nd_notes_per_beat,
+            lyrics,
         ) = _parse_midi_track(data, offset)
-        try:
-            name = track_name.decode("utf-8")
-        except UnicodeDecodeError:
-            # Fallback to latin-1 if utf-8 decoding fails
-            name = track_name.decode("latin-1")
+
+        name = text_decode(track_name)
+        lyrics = [(tick, text_decode(lyric)) for tick, lyric in lyrics] if lyrics else None
         track = MidiTrack(
             name=name,
+            lyrics=lyrics,
             events=midi_events_np,
             numerator=numerator,
             denominator=denominator,
             clocks_per_click=clocks_per_click,
             notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
         )
-        #assert len(midi_events_np)>0, "Track must have at least one event"
+        # assert len(midi_events_np)>0, "Track must have at least one event"
         tracks.append(track)
 
     return Midi(tracks=tracks, ticks_per_quarter=ticks_per_quarter)

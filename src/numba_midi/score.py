@@ -2,6 +2,7 @@
 
 from copy import copy
 from dataclasses import dataclass
+from typing import Optional
 
 from numba.core.decorators import njit
 import numpy as np
@@ -21,7 +22,9 @@ note_dtype = np.dtype(
 )
 
 control_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("number", np.int32), ("value", np.int32)])
-pedal_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("duration", np.float32)])
+pedal_dtype = np.dtype(
+    [("time", np.float32), ("tick", np.int32), ("duration", np.float32), ("duration_tick", np.int32)]
+)
 pitch_bend_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("value", np.int32)])
 tempo_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("bpm", np.float32)])
 
@@ -52,7 +55,17 @@ class Track:
 
     def last_tick(self) -> int:
         """Get the last tick of the track."""
-        return np.max(self.notes["start_tick"] + self.notes["duration_tick"])
+        last_tick = 0
+        if len(self.notes) > 0:
+            last_tick = np.max(self.notes["start_tick"] + self.notes["duration_tick"])
+        if len(self.controls) > 0:
+            last_tick = max(last_tick, np.max(self.controls["tick"]))
+        if len(self.pedals) > 0:
+            last_tick = max(last_tick, np.max(self.pedals["tick"]))
+        if len(self.pitch_bends) > 0:
+            last_tick = max(last_tick, np.max(self.pitch_bends["tick"]))
+
+        return last_tick
 
     def __repr__(self) -> str:
         return (
@@ -82,6 +95,11 @@ class Score:
             f"Score with {len(self.tracks)} tracks, {num_notes} notes, "
             f"last tick {last_tick} and duration {self.duration}"
         )
+
+    def last_tick(self) -> int:
+        """Get the last tick of the score."""
+        last_tick = max(track.last_tick() for track in self.tracks)
+        return last_tick
 
 
 @njit(cache=True, boundscheck=False)
@@ -136,10 +154,11 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
     return program
 
 
-def group_data(keys: list[np.ndarray]) -> dict[tuple, np.ndarray]:
+def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[tuple, np.ndarray]:
     order = np.lexsort(keys)
     # make sure the keys have the same length
     for key_array in keys:
+        assert len(key_array) > 0, "Keys must have at least one element"
         assert len(key_array) == len(keys[0]), "Keys must have the same length"
     is_boundary = np.zeros((len(keys[0]) - 1), dtype=bool)
     for i in range(len(keys)):
@@ -147,13 +166,22 @@ def group_data(keys: list[np.ndarray]) -> dict[tuple, np.ndarray]:
     boundaries = np.nonzero(is_boundary)[0]
     starts = np.concatenate(([0], boundaries + 1))
     ends = np.concatenate((boundaries + 1, [len(keys[0])]))
-    groups: dict[tuple, np.ndarray] = {}
+    output: dict[tuple, np.ndarray] = {}
     for i in range(len(starts)):
         key = tuple([key_array[order[starts[i]]] for key_array in keys])
-        groups[key] = order[starts[i] : ends[i]]
-        for j in range(len(keys)):
-            assert np.all(keys[j][groups[key]] == key[j])
-    return groups
+        if len(keys) == 1:
+            key = key[0]
+        group = order[starts[i] : ends[i]]
+        if data is not None:
+            output[key] = data[order[starts[i] : ends[i]]]
+        else:
+            output[key] = order[starts[i] : ends[i]]
+        if len(keys) == 1:
+            assert np.all(keys[0][group] == key), f"keys[0][group] {keys[0][group]} != key {key}"
+        else:
+            for j in range(len(keys)):
+                assert np.all(keys[j][group] == key[j])
+    return output
 
 
 def extract_notes_start_stop(note_events: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -173,7 +201,26 @@ def extract_notes_start_stop(note_events: np.ndarray) -> tuple[np.ndarray, np.nd
     return note_start_ids, note_stop_ids
 
 
-def midi_to_score(midi_score: Midi) -> Score:
+def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
+    sustain_pedal_mask = channel_controls["number"] == 64
+    pedal_events = channel_controls[sustain_pedal_mask]
+    if len(pedal_events) > 0:
+        num_pedale = len(pedal_events) // 2
+        pedals = np.zeros(num_pedale, dtype=pedal_dtype)
+        assert np.all(pedal_events[::2]["value"] == 127)
+        assert np.all(pedal_events[1::2]["value"] == 0)
+
+        pedals["time"] = pedal_events["time"][::2]
+        pedals["tick"] = pedal_events["tick"][::2]
+        pedals["duration"] = pedal_events["time"][1::2] - pedal_events["time"][::2]
+        pedals["duration_tick"] = pedal_events["tick"][1::2] - pedal_events["tick"][::2]
+
+    else:
+        pedals = np.zeros((0,), dtype=pedal_dtype)
+    return pedals
+
+
+def midi_to_score(midi_score: Midi, minimize_tempo: bool = True) -> Score:
     """Convert a MidiScore to a Score.
 
     Convert from event-based representation notes with durations
@@ -211,7 +258,11 @@ def midi_to_score(midi_score: Midi) -> Score:
     tempo = np.zeros(len(tempo_events), dtype=tempo_dtype)
     tempo["time"] = tempo_events_times
     tempo["tick"] = tempo_events["tick"]
-    tempo["bpm"] = tempo_events["value1"] * 60 / 1000000.0
+    tempo["bpm"] = 60000000 / tempo_events["value1"]
+
+    # remove unnecessary tempo events
+    if minimize_tempo:
+        tempo = tempo[np.hstack(([True], (np.diff(tempo["bpm"]) != 0)))]
 
     lyrics = []
     for _, midi_track in enumerate(midi_score.tracks):
@@ -221,6 +272,8 @@ def midi_to_score(midi_score: Midi) -> Score:
     lyrics = sorted(lyrics, key=lambda x: x[0])
 
     for midi_track_id, midi_track in enumerate(midi_score.tracks):
+        if midi_track.events.size == 0:
+            continue
         numerator = midi_track.numerator
         denominator = midi_track.denominator
         clocks_per_click = midi_track.clocks_per_click
@@ -267,6 +320,31 @@ def midi_to_score(midi_score: Midi) -> Score:
         else:
             continue
 
+        control_change_events_ids = np.nonzero(events["event_type"] == 3)[0]
+
+        control_change_events = events[control_change_events_ids]
+        if len(control_change_events) > 0:
+            channels_control_change_events_ids = group_data(
+                [control_change_events["channel"]], control_change_events_ids
+            )
+            channels_controls = {}
+            for channel, channel_control_change_events_ids in channels_control_change_events_ids.items():
+                channel_control_change_events = events[channel_control_change_events_ids]
+                controls = np.zeros(len(channel_control_change_events_ids), dtype=control_dtype)
+                controls["time"] = events_times[channel_control_change_events_ids]
+                controls["tick"] = events_ticks[channel_control_change_events_ids]
+                controls["number"] = channel_control_change_events["value1"]
+                controls["value"] = channel_control_change_events["value2"]
+                channels_controls[channel] = controls
+        else:
+            channels_controls = {channel: np.zeros((0,), dtype=control_dtype) for channel in range(16)}
+
+        channels_pedals = {}
+        for channel, channel_controls in channels_controls.items():
+            pedals = get_pedals_from_controls(channel_controls)
+
+            channels_pedals[channel] = pedals
+
         for group_keys, track_events_ids in events_groups.items():
             if group_keys not in note_groups:
                 continue
@@ -282,14 +360,12 @@ def midi_to_score(midi_score: Midi) -> Score:
             track_events_ticks = events_ticks[track_events_ids]
             assert np.all(np.diff(track_events_ticks) >= 0)
 
-            #  control change events
-            control_change_mask = track_events["event_type"] == 3
-            control_change_events = track_events[control_change_mask]
-            controls = np.zeros(len(control_change_events), dtype=control_dtype)
-            controls["time"] = track_events_times[control_change_mask]
-            controls["tick"] = track_events_ticks[control_change_mask]
-            controls["number"] = control_change_events["value1"]
-            controls["value"] = control_change_events["value2"]
+            pitch_bends_mask = track_events["event_type"] == 2
+            pitch_bends_events = track_events[pitch_bends_mask]
+            pitch_bends = np.zeros(len(pitch_bends_events), dtype=pitch_bend_dtype)
+            pitch_bends["time"] = track_events_times[pitch_bends_mask]
+            pitch_bends["tick"] = track_events_ticks[pitch_bends_mask]
+            pitch_bends["value"] = pitch_bends_events["value1"]
 
             pitch_bends_mask = track_events["event_type"] == 2
             pitch_bends_events = track_events[pitch_bends_mask]
@@ -324,8 +400,8 @@ def midi_to_score(midi_score: Midi) -> Score:
                     is_drum=False,  # FIXME
                     name=midi_track.name,
                     notes=notes_np,
-                    controls=controls,
-                    pedals=np.zeros((0,), dtype=pedal_dtype),  # FIXME not supported yet
+                    controls=channels_controls[track_channel],
+                    pedals=channels_pedals[track_channel],
                     pitch_bends=pitch_bends,
                 )
                 tracks.append(track)
@@ -374,7 +450,7 @@ def score_to_midi(score: Score) -> Midi:
         events["tick"][id_start : id_start + len(tempo)] = tempo["tick"]
         events["event_type"][id_start : id_start + len(tempo)] = 5
         events["channel"][id_start : id_start + len(tempo)] = 0
-        events["value1"][id_start : id_start + len(tempo)] = tempo["bpm"] * 1000000.0 / 60.0
+        events["value1"][id_start : id_start + len(tempo)] = 60000000 / tempo["bpm"]
         events["value2"][id_start : id_start + len(tempo)] = 0
         id_start += len(tempo)
 
@@ -384,7 +460,7 @@ def score_to_midi(score: Score) -> Midi:
         tempo_events = np.zeros(len(score.tempo), dtype=event_dtype)
         tempo_events["event_type"] = 5
         tempo_events["channel"] = 0
-        tempo_events["value1"] = score.tempo["bpm"] * 1000000.0 / 60.0
+        tempo_events["value1"] = 60000000 / score.tempo["bpm"]
         tempo_events["value2"] = 0
         tempo_events["tick"] = score.tempo["tick"]
         midi_tracks.append(
@@ -453,6 +529,8 @@ def score_to_midi(score: Score) -> Midi:
         events["tick"][id_start : id_start + len(track.controls)] = track.controls["tick"]
         id_start += len(track.controls)
 
+        # TODO check that the pedals are consistent with the controls
+
         # add the pitch bend events
         events["event_type"][id_start : id_start + len(track.pitch_bends)] = 2
         events["value1"][id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["value"]
@@ -494,10 +572,18 @@ def score_to_midi(score: Score) -> Midi:
     return midi_score
 
 
-def load_score(file_path: str) -> Score:
+def load_score(file_path: str, minimize_tempo: bool = True, check_round_trip: bool = False) -> Score:
     """Loads a MIDI file and converts it to a Score."""
     midi_raw = load_midi_score(file_path)
-    return midi_to_score(midi_raw)
+    score = midi_to_score(midi_raw, minimize_tempo=minimize_tempo)
+
+    if check_round_trip:
+        # check if the two score can be converted back and forth
+        midi_raw2 = score_to_midi(score)
+        score2 = midi_to_score(midi_raw2)
+        assert_scores_equal(score, score2)
+
+    return score
 
 
 def save_score_to_midi(score: Score, file_path: str) -> None:
@@ -738,7 +824,8 @@ def time_to_ticks(time: float, tempo: np.ndarray, ticks_per_quarter: int) -> int
     bpm = tempo["bpm"][tempo_idx]
     ref_ticks = tempo["tick"][tempo_idx]
     ref_time = tempo["time"][tempo_idx]
-    ticks_per_second = bpm / 60.0 * ticks_per_quarter / 1_000_000.0
+    quarter_per_second = bpm / 60.0
+    ticks_per_second = ticks_per_quarter * quarter_per_second
     return (ref_ticks + (time - ref_time) * ticks_per_second).astype(np.int32)
 
 
@@ -876,6 +963,7 @@ def assert_scores_equal(
     score1: Score,
     score2: Score,
     sort_tracks_with_channel: bool = True,
+    sort_tracks_with_programs_and_num_notes: bool = False,
     time_tol: float = 1e-3,
     value_tol: float = 1e-2,
 ) -> None:
@@ -884,12 +972,22 @@ def assert_scores_equal(
     tracks_1 = score1.tracks
     tracks_2 = score2.tracks
     if sort_tracks_with_channel:
+        # sort by program and then by number of notes to try to have the same order
         tracks_1 = sorted(tracks_1, key=lambda x: x.channel)
         tracks_2 = sorted(tracks_2, key=lambda x: x.channel)
+    if sort_tracks_with_programs_and_num_notes:
+        # sort by program and then by number of notes to try to have the same order
+        tracks_1 = sorted(tracks_1, key=lambda x: (x.program, len(x.notes), x.notes["pitch"].sum()))
+        tracks_2 = sorted(tracks_2, key=lambda x: (x.program, len(x.notes), x.notes["pitch"].sum()))
+    assert score1.tempo.shape == score2.tempo.shape, "Different number of tempo events"
+    assert np.all(score1.tempo["tick"] == score2.tempo["tick"]), "Dirrent tick values for tempo events"
 
+    assert np.allclose(score1.tempo["bpm"], score2.tempo["bpm"], atol=1e-3), "Different bpm values for tempo events"
+    assert np.allclose(score1.tempo["time"], score2.tempo["time"], atol=1e-3), "Different time values for tempo events"
     for track1, track2 in zip(tracks_1, tracks_2):
         assert track1.name == track2.name, "Track names are different"
-        assert track1.channel == track2.channel, "Track channels are different"
+        if not (sort_tracks_with_programs_and_num_notes):
+            assert track1.channel == track2.channel, "Track channels are different"
         assert track1.program == track2.program, "Track programs are different"
         # sort not by pitch then tick
         # notes1= track1.notes

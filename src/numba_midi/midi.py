@@ -17,6 +17,17 @@ event_dtype = np.dtype(
     ]
 )
 
+# event types:
+# 0: Note On
+# 1: Note Off
+# 2: Pitch Bend
+# 3: Control Change
+# 4: Program Change
+# 5: Tempo Change
+# 6: Channel Aftertouch
+# 7: Polyphonic Aftertouch
+# 8: SysEx
+
 
 @dataclass
 class MidiTrack:

@@ -3,7 +3,9 @@
 -e ./src/
     # via -r requirements.in
 colorama==0.4.6
-    # via pytest
+    # via
+    #   pytest
+    #   tqdm
 iniconfig==2.0.0
     # via pytest
 llvmlite==0.44.0
@@ -18,13 +20,22 @@ numpy==2.1.3
     # via
     #   numba
     #   numba-midi
+    #   symusic
 packaging==24.2
     # via pytest
+platformdirs==4.3.6
+    # via symusic
 pluggy==1.5.0
     # via pytest
+pysmartdl==1.3.4
+    # via symusic
 pytest==8.3.5
     # via -r requirements.in
 ruff==0.9.10
+    # via -r requirements.in
+symusic==0.5.7
+    # via -r requirements.in
+tqdm==4.67.1
     # via -r requirements.in
 typing-extensions==4.12.2
     # via mypy

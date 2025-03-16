@@ -2,7 +2,7 @@
 
 from copy import copy
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from numba.core.decorators import njit
 import numpy as np
@@ -154,7 +154,7 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
     return program
 
 
-def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[tuple, np.ndarray]:
+def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
     order = np.lexsort(keys)
     # make sure the keys have the same length
     for key_array in keys:

@@ -20,6 +20,12 @@ pip install git+https://github.com/martinResearch/numba_midi.git
 
 The library includes a `PianoRoll` dataclass with conversion functions to seamlessly transform between piano rolls and MIDI scores.
 
+## Interopability
+
+We provide functions to convert from/to score from the **symusic** and **pretty_midi** liberaries in 
+[symusic.py](./src/numba_midi/interop/symusic.py) 
+and [pretty_midi.py](./src/numba_midi/interop/pretty_midi.py) respectively.
+
 ## Alternatives
 
 Here are some alternative libraries and how they compare to `numba_midi`:

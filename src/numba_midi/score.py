@@ -79,18 +79,18 @@ class Score:
         num_notes = sum(len(track.notes) for track in self.tracks)
         last_tick = max(track.last_tick() for track in self.tracks)
         return (
-            f"Score with {len(self.tracks)} tracks, {num_notes} notes, ",
-            f"last tick {last_tick} and duration {self.duration}",
+            f"Score with {len(self.tracks)} tracks, {num_notes} notes, "
+            f"last tick {last_tick} and duration {self.duration}"
         )
 
 
-@njit(cache=True)
-def extract_notes_start_stop_numba(sorted_note_events: np.ndarray) -> np.ndarray:
+@njit(cache=True, boundscheck=False)
+def extract_notes_start_stop_numba(sorted_note_events: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted by pitch and then by start time.
     """
-    note_start_ids = []
-    note_stop_ids = []
+    note_start_ids: list[int] = []
+    note_stop_ids: list[int] = []
     last_pitch = -1
     num_active_notes = 0
     last_channel = -1
@@ -121,7 +121,8 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray) -> np.ndarray
         num_active_notes -= 1
     assert len(note_start_ids) == len(note_stop_ids)
     # assert np.all(sorted_note_events[note_start_ids]["value1"] == sorted_note_events[note_stop_ids]["value1"])
-    return note_start_ids, note_stop_ids
+    return np.array(note_start_ids), np.array(note_stop_ids)
+
 
 @njit(cache=True, boundscheck=False)
 def get_events_program(events: np.ndarray) -> np.ndarray:
@@ -138,20 +139,20 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
 def group_data(keys: list[np.ndarray]) -> dict[tuple, np.ndarray]:
     order = np.lexsort(keys)
     # make sure the keys have the same length
-    for k in keys:
-        assert len(k) == len(keys[0]), "Keys must have the same length"
+    for key_array in keys:
+        assert len(key_array) == len(keys[0]), "Keys must have the same length"
     is_boundary = np.zeros((len(keys[0]) - 1), dtype=bool)
     for i in range(len(keys)):
         is_boundary |= np.diff(keys[i][order]) != 0
     boundaries = np.nonzero(is_boundary)[0]
     starts = np.concatenate(([0], boundaries + 1))
     ends = np.concatenate((boundaries + 1, [len(keys[0])]))
-    groups = {}
+    groups: dict[tuple, np.ndarray] = {}
     for i in range(len(starts)):
-        key = tuple([k[order[starts[i]]] for k in keys])
+        key = tuple([key_array[order[starts[i]]] for key_array in keys])
         groups[key] = order[starts[i] : ends[i]]
-        for k in range(len(keys)):
-            assert np.all(keys[k][groups[key]] == key[k])
+        for j in range(len(keys)):
+            assert np.all(keys[j][groups[key]] == key[j])
     return groups
 
 
@@ -219,13 +220,11 @@ def midi_to_score(midi_score: Midi) -> Score:
     tempo["bpm"] = tempo_events["value1"] * 60 / 1000000.0
 
     lyrics = []
-    for midi_track_id, midi_track in enumerate(midi_score.tracks):
+    for _, midi_track in enumerate(midi_score.tracks):
         if midi_track.lyrics is not None:
             lyrics.extend(midi_track.lyrics)
-
-    lyrics = np.array(lyrics, dtype=[("tick", np.int32), ("text", "U256")])
     # sort the lyrics by tick
-    lyrics = lyrics[np.argsort(lyrics["tick"])]
+    lyrics = sorted(lyrics, key=lambda x: x[0])
 
     for midi_track_id, midi_track in enumerate(midi_score.tracks):
         numerator = midi_track.numerator
@@ -369,7 +368,7 @@ def score_to_midi(score: Score) -> Midi:
     midi_tracks = []
     # if two tracks use the same channel, we use multiple midi tracks
     use_multiple_tracks = len(set(track.midi_track_id for track in score.tracks)) > 1
-    if has_duplicate_values((track.channel for track in score.tracks)):
+    if has_duplicate_values([track.channel for track in score.tracks]):
         # multiple tracks with the same channel not supported because
         # it requires carefull program changes each time the instrument changes in the channel
         # using multiple tracks instead
@@ -555,6 +554,8 @@ def merge_tracks_with_same_program(score: Score) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
     return new_score
 
@@ -577,6 +578,8 @@ def filter_instruments(score: Score, instrument_names: list[str]) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
 
 
@@ -594,6 +597,8 @@ def remove_empty_tracks(score: Score) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
 
 
@@ -613,6 +618,8 @@ def remove_pitch_bends(score: Score) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
 
 
@@ -632,6 +639,8 @@ def remove_control_changes(score: Score) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
 
 
@@ -650,6 +659,8 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
 
 
@@ -757,9 +768,14 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
     end = start + duration
     tracks = []
 
+    tempo_keep = (score.tempo["time"] < end) & (score.tempo["time"] >= start)
+    new_tempo = score.tempo[tempo_keep]
+    new_tempo["time"] = np.maximum(new_tempo["time"] - start, 0)
+    tick_end = time_to_ticks(end, score.tempo, score.ticks_per_quarter)
+    tick_start = time_to_ticks(start, score.tempo, score.ticks_per_quarter)
+    new_tempo["tick"] = np.maximum(new_tempo["tick"] - tick_start, 0)
+
     for track in score.tracks:
-        tick_start = time_to_ticks(start, track.tempo, score.ticks_per_quarter)
-        tick_end = time_to_ticks(end, track.tempo, score.ticks_per_quarter)
         notes = track.notes
         notes_end = notes["start"] + notes["duration"]
         notes_keep = (notes["start"] < end) & (notes_end > start)
@@ -795,11 +811,6 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
         new_pitch_bends["time"] = np.maximum(new_pitch_bends["time"] - start, 0)
         new_pitch_bends["tick"] = np.maximum(new_pitch_bends["tick"] - tick_start, 0)
 
-        tempo_keep = (track.tempo["time"] < end) & (track.tempo["time"] >= start)
-        new_tempo = track.tempo[tempo_keep]
-        new_tempo["time"] = np.maximum(new_tempo["time"] - start, 0)
-        new_tempo["tick"] = np.maximum(new_tempo["tick"] - tick_start, 0)
-
         new_track = Track(
             channel=track.channel,
             program=track.program,
@@ -809,7 +820,7 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
             controls=new_controls,
             pedals=new_pedals,
             pitch_bends=new_pitch_bends,
-            tempo=track.tempo,
+            midi_track_id=track.midi_track_id,
         )
         tracks.append(new_track)
     return Score(
@@ -820,6 +831,7 @@ def crop_score(score: Score, start: float, duration: float) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=new_tempo,
     )
 
 
@@ -834,6 +846,8 @@ def select_tracks(score: Score, track_ids: list[int]) -> Score:
         clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=score.tempo,
+        lyrics=score.lyrics,
     )
 
 
@@ -897,9 +911,9 @@ def assert_scores_equal(
         # sort not by pitch then tick
         # notes1= track1.notes
         # notes2= track2.notes
-        order1 = np.lexsort((range(len(track1.notes)), track1.notes["start_tick"], track1.notes["pitch"]))
+        order1 = np.lexsort((np.arange(len(track1.notes)), track1.notes["start_tick"], track1.notes["pitch"]))
         notes1 = track1.notes[order1]
-        order2 = np.lexsort((range(len(track2.notes)), track2.notes["start_tick"], track2.notes["pitch"]))
+        order2 = np.lexsort((np.arange(len(track2.notes)), track2.notes["start_tick"], track2.notes["pitch"]))
         notes2 = track2.notes[order2]
         assert np.all(notes1["pitch"] == notes2["pitch"]), "Pitches are different"
         max_tick_diff = max(abs(notes1["start_tick"] - notes2["start_tick"]))

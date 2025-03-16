@@ -97,9 +97,7 @@ class Midi:
 
 
 @njit(cache=True, boundscheck=False)
-def get_event_times(
-    midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int
-) -> tuple[np.ndarray, np.ndarray]:
+def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
     """Get the time of each event in ticks and seconds."""
     tick = np.uint32(0)
     time = 0.0

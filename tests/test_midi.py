@@ -58,12 +58,12 @@ def test_sort_midi_events() -> None:
         assert np.all(sorted_events == sorted_events2)
 
 
-def collect_lakh_dataset_failure_cases(compare_to_symusic:bool=False) -> None:
+def collect_lakh_dataset_failure_cases(compare_to_symusic: bool = False) -> None:
     midi_files = glob.glob(
         str(Path(r"C:\repos\audio_to_midi\src\audio_to_midi\datasets\lakh_midi\lmd_matched") / "**" / "*.mid"),
         recursive=True,
     )
-    midi_files= midi_files[:10]
+    midi_files = midi_files[:10]
     for midi_file in tqdm.tqdm(midi_files):
         try:
             symusic.Score.from_file(midi_file)
@@ -77,7 +77,7 @@ def collect_lakh_dataset_failure_cases(compare_to_symusic:bool=False) -> None:
 
             # compare with symusic
             if compare_to_symusic:
-                symusic_score_ticks= symusic.Score.from_file(midi_file)
+                symusic_score_ticks = symusic.Score.from_file(midi_file)
                 symusic_tracks_with_notes = [track for track in symusic_score_ticks.tracks if len(track.notes) > 0]
                 for i, track in enumerate(score.tracks):
                     symusic_track_ticks = symusic_tracks_with_notes[i]
@@ -98,14 +98,11 @@ def collect_lakh_dataset_failure_cases(compare_to_symusic:bool=False) -> None:
             shutil.copy(midi_file, Path(__file__).parent / "data" / Path(midi_file).name)
 
 
-
-def test_score_to_midi_midi_to_score_round_trip(compare_to_symusic:bool=False) -> None:
+def test_score_to_midi_midi_to_score_round_trip(compare_to_symusic: bool = False) -> None:
     midi_files = glob.glob(str(Path(__file__).parent / "data" / "*.mid"))
 
     midi_files = sorted(midi_files)
     for midi_file in tqdm.tqdm(midi_files):
-
-
         midi_raw = load_midi_score(midi_file)
 
         score = midi_to_score(midi_raw)
@@ -130,7 +127,7 @@ def test_score_to_midi_midi_to_score_round_trip(compare_to_symusic:bool=False) -
 
 
 if __name__ == "__main__":
-    #collect_lakh_dataset_failure_cases()
+    # collect_lakh_dataset_failure_cases()
     test_score_to_midi_midi_to_score_round_trip()
     test_sort_midi_events()
 

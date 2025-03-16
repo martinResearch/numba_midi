@@ -9,10 +9,7 @@ tqdm
 
 # for interoperability with other midi libraries
 pretty_midi
-mido
-music21
 symusic
-
 
 # setuptools required by pretty_midi
 setuptools 

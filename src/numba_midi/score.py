@@ -102,43 +102,82 @@ class Score:
         return last_tick
 
 
-@njit(cache=True, boundscheck=False)
-def extract_notes_start_stop_numba(sorted_note_events: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+# @njit(cache=True, boundscheck=False)
+def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
-    The note events are assumed to be sorted by pitch and then by start time.
+    The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.
+
+    We provide control to the user on how to handle overlapping note and zero length notes
+    through the parameter `note_mode` that allows choosing among multiple modes:
+
+    | mode | strategy              | zero-length notes |
+    |------|-----------------------|-------------------|
+    | 1    | no overlap            | no                |
+    | 2    | no overlap            | yes               |
+    | 3    | first-in-first-out    | no                |
+    | 4    | first-in-first-out    | yes               |
+    | 5    | Note Off stops all    | no                |
+    | 6    | Note Off stops all    | yes               |
     """
     note_start_ids: list[int] = []
     note_stop_ids: list[int] = []
+    active_note_starts = []
     last_pitch = -1
-    num_active_notes = 0
     last_channel = -1
     for k in range(len(sorted_note_events)):
         if not last_pitch == sorted_note_events[k]["value1"] or not last_channel == sorted_note_events[k]["channel"]:
-            # remove  unfinished notes
-            while num_active_notes > 0:
-                note_start_ids.pop()
-                num_active_notes -= 1
-            assert num_active_notes == 0
-            # assert len(note_start_ids)==len(note_stop_ids)
-            # assert np.all(sorted_note_events[note_start_ids]["value1"] == sorted_note_events[note_stop_ids]["value1"])
-        last_pitch = sorted_note_events[k]["value1"]
-        last_channel = sorted_note_events[k]["channel"]
+            # remove unfinished notes for the previous pitch and channel
+            active_note_starts.clear()
+            last_pitch = sorted_note_events[k]["value1"]
+            last_channel = sorted_note_events[k]["channel"]
 
         if sorted_note_events[k]["event_type"] == 0 and sorted_note_events[k]["value2"] > 0:
-            note_start_ids.append(k)
-            num_active_notes += 1
-        elif num_active_notes > 0:
-            note_stop_ids.append(k)
-            num_active_notes -= 1
-        assert num_active_notes >= 0, "num_active_notes should be non negative"
+            # Note on event
+            if mode == 1:
+                # stop the all active notes
+                for note in active_note_starts:
+                    note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
+                    if note_duration > 0:
+                        note_start_ids.append(note)
+                        note_stop_ids.append(k)
+                active_note_starts.clear()
+            elif mode == 2:
+                # stop all the active notes
+                for note in active_note_starts:
+                    note_start_ids.append(note)
+                    note_stop_ids.append(k)
+                active_note_starts.clear()
+            active_note_starts.append(k)
+        # Note off event
+        elif mode in {1, 5}:
+            # stop all the active notes
+            for note in active_note_starts:
+                note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
+                if note_duration > 0:
+                    note_start_ids.append(note)
+                    note_stop_ids.append(k)
+            active_note_starts.clear()
+        elif mode in {2, 6}:
+            # stop all the active notes
+            for note in active_note_starts:
+                note_start_ids.append(note)
+                note_stop_ids.append(k)
+            active_note_starts.clear()
+        elif mode == 3:
+            # stop the first active note
+            if len(active_note_starts) > 0:
+                note = active_note_starts.pop(0)
+                note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
+                if note_duration > 0:
+                    note_start_ids.append(note)
+                    note_stop_ids.append(k)
+        elif mode == 4:
+            # stop the first active note
+            if len(active_note_starts) > 0:
+                note = active_note_starts.pop(0)
+                note_start_ids.append(note)
+                note_stop_ids.append(k)
 
-    # assert len(note_start_ids) == len(note_stop_ids) + num_active_notes
-    while num_active_notes > 0:
-        # remove unfinished notes
-        note_start_ids.pop()
-        num_active_notes -= 1
-    assert len(note_start_ids) == len(note_stop_ids)
-    # assert np.all(sorted_note_events[note_start_ids]["value1"] == sorted_note_events[note_stop_ids]["value1"])
     return np.array(note_start_ids), np.array(note_stop_ids)
 
 
@@ -184,12 +223,12 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
     return output
 
 
-def extract_notes_start_stop(note_events: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def extract_notes_start_stop(note_events: np.ndarray, notes_mode: int) -> tuple[np.ndarray, np.ndarray]:
     notes_order = np.lexsort(
         (note_events["event_type"], note_events["tick"], note_events["value1"], note_events["channel"])
     )
     sorted_note_events = note_events[notes_order]
-    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(sorted_note_events)
+    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(sorted_note_events, notes_mode)
     note_start_ids = notes_order[ordered_note_start_ids]
     note_stop_ids = notes_order[ordered_note_stop_ids]
 
@@ -220,7 +259,7 @@ def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
     return pedals
 
 
-def midi_to_score(midi_score: Midi, minimize_tempo: bool = True) -> Score:
+def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int = 5) -> Score:
     """Convert a MidiScore to a Score.
 
     Convert from event-based representation notes with durations
@@ -301,7 +340,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True) -> Score:
         if len(notes_events_ids) > 0:
             note_events = events[notes_events_ids]
 
-            note_start_ids, note_stop_ids = extract_notes_start_stop(note_events)
+            note_start_ids, note_stop_ids = extract_notes_start_stop(note_events, notes_mode)
             assert np.all(np.diff(note_start_ids) >= 0), "note start ids should be sorted"
             if note_start_ids.size == 0:
                 continue
@@ -572,15 +611,17 @@ def score_to_midi(score: Score) -> Midi:
     return midi_score
 
 
-def load_score(file_path: str, minimize_tempo: bool = True, check_round_trip: bool = False) -> Score:
+def load_score(
+    file_path: str, notes_mode: int = 5, minimize_tempo: bool = True, check_round_trip: bool = False
+) -> Score:
     """Loads a MIDI file and converts it to a Score."""
     midi_raw = load_midi_score(file_path)
-    score = midi_to_score(midi_raw, minimize_tempo=minimize_tempo)
+    score = midi_to_score(midi_raw, minimize_tempo=minimize_tempo, notes_mode=notes_mode)
 
     if check_round_trip:
         # check if the two score can be converted back and forth
         midi_raw2 = score_to_midi(score)
-        score2 = midi_to_score(midi_raw2)
+        score2 = midi_to_score(midi_raw2, minimize_tempo=minimize_tempo, notes_mode=notes_mode)
         assert_scores_equal(score, score2)
 
     return score

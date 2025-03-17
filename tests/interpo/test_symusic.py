@@ -16,7 +16,7 @@ def test_symusic_conversion() -> None:
         print(f"Testing PrettyMIDI conversion with {midi_file}")
         # load the score uing numba_midi
 
-        score1 = load_score(midi_file, minimize_tempo=False)
+        score1 = load_score(midi_file, notes_mode=3, minimize_tempo=False)
 
         # Load the MIDI file
         symusic_score = symusic.Score.from_file(midi_file)
@@ -29,7 +29,7 @@ def test_symusic_conversion() -> None:
             "The original and converted Score objects are not equal",
         )
 
-        # Convert back to PrettyMIDI object
+        # Convert back to symusic object
         symusic_score_converted = to_symusic(score2)
 
         # Convert back to Score object

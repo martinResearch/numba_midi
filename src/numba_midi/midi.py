@@ -195,6 +195,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 pass
 
         elif status_byte == 0xF0:  # SysEx event
+            # System Exclusive (aka SysEx) messages are used to send device specific data.
             sysex_length, offset = read_var_length(data, offset)
             offset += sysex_length
 

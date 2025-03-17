@@ -102,7 +102,7 @@ class Score:
         return last_tick
 
 
-# @njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False)
 def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.

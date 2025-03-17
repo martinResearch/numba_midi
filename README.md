@@ -26,6 +26,44 @@ We provide functions to convert from/to score from the **symusic** and **pretty_
 [symusic.py](./src/numba_midi/interop/symusic.py) 
 and [pretty_midi.py](./src/numba_midi/interop/pretty_midi.py) respectively.
 
+## Overlapping notes behavior
+
+Midi files can contain tracks with notes that overlap in channel, pitch and time. How to convert these to notes with start time and durations depends on the chosen convention. Ideally we want to chose the one that matches how the synthetizer will interpret the midi events. 
+
+For example for a given channel and pitch we can have: 
+
+tick|channel|type| pitch|velocity
+----|-------|----|------|----
+100 |1      |On  |80    |60
+110 |1      |On  |80    |60
+120 |1      |On  |80    |60
+120 |1      |Off |80    |0
+130 |1      |Off |80    |0
+140 |1      |Off |80    |0
+150 |1      |On  |80    |60
+150 |1      |Off |80    |0
+160 |1      |Off |80    |0
+
+Should the *Off* event on tick 120 stop all three notes, the first two notes or just the first one?
+Should the first note stop at tick 110 when we have a new note to avoid any overlap? Should we create a note with duration 0 or 10 starting on tick 150, or no note all all?
+If a note is note closed when we reach the end of the song, should it be discarder or should we keep it and use the end of the song as end time?
+
+
+We provide control to the user though the parameter `note_overlap` that allows to chose amonst multiple modes:
+
+mode |strategy| zero length notes
+-|--|--
+1| no overlap| no
+2| no overlap| yes
+3| first-in-first-out | no
+4| first-in-first-out | yes
+5| Note Off stops all | no
+6| Note Off stops all | yes
+
+We obtain the same behavior as *pretty-midi* when using mode 5.
+
+Note: using no overlap (mode 1 or 2) is not as strong as enforcing a monophonic constraint on the instrument: two notes with different pitch can still overlap in time. Although polyphonic, a piano should use `note_overlap=1` to be realistic.
+
 ## Alternatives
 
 Here are some alternative libraries and how they compare to `numba_midi`:

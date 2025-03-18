@@ -15,7 +15,6 @@ def test_symusic_conversion() -> None:
     for midi_file in midi_files:
         print(f"Testing PrettyMIDI conversion with {midi_file}")
         # load the score uing numba_midi
-
         score1 = load_score(midi_file, notes_mode=3, minimize_tempo=False)
 
         # Load the MIDI file

@@ -11,7 +11,7 @@ from numba_midi.score import assert_scores_equal, load_score
 
 def test_symusic_conversion() -> None:
     # Create a PrettyMIDI object
-    midi_files = glob.glob(str(Path(__file__).parent.parent / "data" / "*.mid"))
+    midi_files = glob.glob(str(Path(__file__).parent.parent / "data" / "symusic" / "*.mid"))
     for midi_file in midi_files:
         print(f"Testing PrettyMIDI conversion with {midi_file}")
         # load the score uing numba_midi

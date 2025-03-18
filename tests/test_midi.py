@@ -19,7 +19,7 @@ from numba_midi.score import assert_scores_equal, midi_to_score, score_to_midi
 
 
 def test_save_midi_data_load_midi_bytes_roundtrip() -> None:
-    midi_files = glob.glob(str(Path(__file__).parent / "data" / "*.mid"))
+    midi_files = glob.glob(str(Path(__file__).parent / "data" / "numba_midi" / "*.mid"))
     for midi_file in midi_files:
         print(f"Testing save_midi_data_load_midi_bytes_roundtrip with {midi_file}")
         # load row midi score
@@ -34,7 +34,7 @@ def test_save_midi_data_load_midi_bytes_roundtrip() -> None:
 
 
 def test_sort_midi_events() -> None:
-    midi_files = glob.glob(str(Path(__file__).parent / "data" / "*.mid"))
+    midi_files = glob.glob(str(Path(__file__).parent / "data" / "numba_midi" / "*.mid"))
     for midi_file in midi_files:
         print(f"Testing sort_midi_events with {midi_file}")
         # load row midi score
@@ -69,11 +69,11 @@ def collect_lakh_dataset_failure_cases(compare_to_symusic: bool = False) -> None
             print(f"Failed to process {midi_file}: {e}")
             # copy the faild ons=es to the Path(__file__).parent / "data"  folder
             # do not do a rename
-            shutil.copy(midi_file, Path(__file__).parent / "data" / Path(midi_file).name)
+            shutil.copy(midi_file, Path(__file__).parent / "data" / "numba_midi" / Path(midi_file).name)
 
 
 def test_score_to_midi_midi_to_score_round_trip(compare_to_symusic: bool = False) -> None:
-    midi_files = glob.glob(str(Path(__file__).parent / "data" / "*.mid"))
+    midi_files = glob.glob(str(Path(__file__).parent / "data" / "numba_midi" / "*.mid"))
 
     midi_files = sorted(midi_files)
     for midi_file in tqdm.tqdm(midi_files):

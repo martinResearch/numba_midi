@@ -121,7 +121,8 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
     """
     note_start_ids: list[int] = []
     note_stop_ids: list[int] = []
-    active_note_starts = []
+    active_note_starts: list[int] = []
+    new_active_note_starts: list[int] = []
     last_pitch = -1
     last_channel = -1
     for k in range(len(sorted_note_events)):
@@ -135,12 +136,17 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
             # Note on event
             if mode == 1:
                 # stop the all active notes
+                new_active_note_starts.clear()
                 for note in active_note_starts:
                     note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
                     if note_duration > 0:
                         note_start_ids.append(note)
                         note_stop_ids.append(k)
+                    else:
+                        new_active_note_starts.append(note)
                 active_note_starts.clear()
+                for note in new_active_note_starts:
+                    active_note_starts.append(note)
             elif mode == 2:
                 # stop all the active notes
                 for note in active_note_starts:
@@ -152,11 +158,17 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
         elif mode in {1, 5}:
             # stop all the active notes
             for note in active_note_starts:
+                new_active_note_starts.clear()
                 note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
                 if note_duration > 0:
                     note_start_ids.append(note)
                     note_stop_ids.append(k)
+                else:
+                    new_active_note_starts.append(note)
             active_note_starts.clear()
+            for note in new_active_note_starts:
+                active_note_starts.append(note)
+
         elif mode in {2, 6}:
             # stop all the active notes
             for note in active_note_starts:
@@ -381,7 +393,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int
         channels_pedals = {}
         for channel, channel_controls in channels_controls.items():
             pedals = get_pedals_from_controls(channel_controls)
-
             channels_pedals[channel] = pedals
 
         for group_keys, track_events_ids in events_groups.items():

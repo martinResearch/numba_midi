@@ -15,7 +15,7 @@ def test_pretty_midi_conversion() -> None:
     for midi_file in midi_files:
         print(f"Testing PrettyMIDI conversion with {midi_file}")
         # load the score uing numba_midi
-        score1 = load_score(midi_file)
+        score1 = load_score(midi_file, notes_mode=5, minimize_tempo=True)
 
         # Load the MIDI file
         midi = pretty_midi.PrettyMIDI(midi_file)

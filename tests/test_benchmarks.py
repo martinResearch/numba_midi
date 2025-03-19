@@ -1,3 +1,5 @@
+"""Benchmarking script for loading MIDI files using numba_midi, symusic, and pretty_midi."""
+
 import glob
 from pathlib import Path
 import time
@@ -8,7 +10,7 @@ import symusic
 from numba_midi.score import load_score
 
 
-def benchmark():
+def test_benchmark() -> None:
     # Create a PrettyMIDI object
     midi_files = glob.glob(str(Path(__file__).parent / "data" / "symusic" / "*.mid"))
     num_iterations = 100
@@ -50,4 +52,4 @@ def benchmark():
 
 
 if __name__ == "__main__":
-    benchmark()
+    test_benchmark()

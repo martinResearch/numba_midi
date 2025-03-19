@@ -257,7 +257,6 @@ def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
     sustain_pedal_mask = channel_controls["number"] == 64
     pedal_events = channel_controls[sustain_pedal_mask]
     if len(pedal_events) > 0:
-        pedals = []
         # remove heading pedal off events appearing any pedal on event
         active_pedal = False
         pedal_start = 0
@@ -274,14 +273,14 @@ def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
                 pedals_ends.append(k)
 
         # FIXME: what do we do when there is no end event for the past pedal
-        pedals_on = pedal_events[pedals_starts]
-        pedals_off = pedal_events[pedals_ends]
-        pedals = np.zeros(len(pedals_on), dtype=pedal_dtype)
 
-        pedals["time"] = pedals_on["time"]
-        pedals["tick"] = pedals_on["tick"]
-        pedals["duration"] = pedals_off["time"] - pedals_on["time"]
-        pedals["duration_tick"] = pedals_off["tick"] - pedals_on["tick"]
+        pedals = np.zeros(len(pedals_starts), dtype=pedal_dtype)
+
+        for k, (s, e) in enumerate(zip(pedals_starts, pedals_ends)):
+            pedals[k]["time"] = pedal_events[s]["tick"]
+            pedals[k]["tick"] = pedal_events[s]["tick"]
+            pedals[k]["duration"] = pedal_events[e]["tick"] - pedal_events[s]["tick"]
+            pedals[k]["duration_tick"] = pedal_events[e]["tick"] - pedal_events[s]["tick"]
 
     else:
         pedals = np.zeros((0,), dtype=pedal_dtype)

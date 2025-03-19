@@ -15,7 +15,7 @@ from numba_midi.midi import (
     save_midi_data,
     sort_midi_events,
 )
-from numba_midi.score import assert_scores_equal, midi_to_score, score_to_midi
+from numba_midi.score import assert_scores_equal, load_score, midi_to_score, score_to_midi
 
 
 def test_save_midi_data_load_midi_bytes_roundtrip() -> None:
@@ -93,19 +93,12 @@ def test_score_to_midi_midi_to_score_round_trip_failures(compare_to_symusic: boo
     midi_files = sorted(midi_files)
     for midi_file in tqdm.tqdm(midi_files):
         print(f"testing {midi_file}")
-        midi_raw = load_midi_score(midi_file)
-
-        score = midi_to_score(midi_raw)
-        midi_raw2 = score_to_midi(score)
-        score2 = midi_to_score(midi_raw2)
-
-        # check if the two scores are equal
-        assert_scores_equal(score, score2)
+        load_score(midi_file, check_round_trip=True)
 
 
 if __name__ == "__main__":
     # collect_lakh_dataset_failure_cases()
-    # test_score_to_midi_midi_to_score_round_trip_failures()
+    test_score_to_midi_midi_to_score_round_trip_failures()
     test_score_to_midi_midi_to_score_round_trip()
     test_sort_midi_events()
     test_save_midi_data_load_midi_bytes_roundtrip()

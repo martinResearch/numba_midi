@@ -102,7 +102,7 @@ class Score:
         return last_tick
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.
@@ -157,8 +157,8 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
         # Note off event
         elif mode in {1, 5}:
             # stop all the active notes
+            new_active_note_starts.clear()
             for note in active_note_starts:
-                new_active_note_starts.clear()
                 note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
                 if note_duration > 0:
                     note_start_ids.append(note)
@@ -193,7 +193,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
     return np.array(note_start_ids), np.array(note_stop_ids)
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def get_events_program(events: np.ndarray) -> np.ndarray:
     channel_to_program = np.zeros((16), dtype=np.int32)
     program = np.zeros((len(events)), dtype=np.int32)
@@ -252,19 +252,36 @@ def extract_notes_start_stop(note_events: np.ndarray, notes_mode: int) -> tuple[
     return note_start_ids, note_stop_ids
 
 
+@njit(cache=True, boundscheck=True)
 def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
     sustain_pedal_mask = channel_controls["number"] == 64
     pedal_events = channel_controls[sustain_pedal_mask]
     if len(pedal_events) > 0:
-        num_pedale = len(pedal_events) // 2
-        pedals = np.zeros(num_pedale, dtype=pedal_dtype)
-        assert np.all(pedal_events[::2]["value"] == 127)
-        assert np.all(pedal_events[1::2]["value"] == 0)
+        pedals = []
+        # remove heading pedal off events appearing any pedal on event
+        active_pedal = False
+        pedal_start = 0
+        pedals_starts = []
+        pedals_ends = []
 
-        pedals["time"] = pedal_events["time"][::2]
-        pedals["tick"] = pedal_events["tick"][::2]
-        pedals["duration"] = pedal_events["time"][1::2] - pedal_events["time"][::2]
-        pedals["duration_tick"] = pedal_events["tick"][1::2] - pedal_events["tick"][::2]
+        for k in range(len(pedal_events) - 1):
+            if pedal_events[k]["value"] == 127 and not active_pedal:
+                active_pedal = True
+                pedal_start = k
+            if pedal_events[k]["value"] == 0 and active_pedal:
+                active_pedal = False
+                pedals_starts.append(pedal_start)
+                pedals_ends.append(k)
+
+        # FIXME: what do we do when there is no end event for the past pedal
+        pedals_on = pedal_events[pedals_starts]
+        pedals_off = pedal_events[pedals_ends]
+        pedals = np.zeros(len(pedals_on), dtype=pedal_dtype)
+
+        pedals["time"] = pedals_on["time"]
+        pedals["tick"] = pedals_on["tick"]
+        pedals["duration"] = pedals_off["time"] - pedals_on["time"]
+        pedals["duration_tick"] = pedals_off["tick"] - pedals_on["tick"]
 
     else:
         pedals = np.zeros((0,), dtype=pedal_dtype)
@@ -341,7 +358,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int
         # sort all the events in lexicographic order by channel and tick
         # this allows to have a order for the events that simplifies the code to process them
         events_groups = group_data([events_programs, events["channel"]])
-
         # sort in lexicographic order by pitch first and then by tick, then even type
         # this allows to have a order for the events that simplifies the
         # extracting matching note starts and stops
@@ -374,11 +390,12 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int
         control_change_events_ids = np.nonzero(events["event_type"] == 3)[0]
 
         control_change_events = events[control_change_events_ids]
+        channels_controls = {channel: np.zeros((0,), dtype=control_dtype) for channel in range(16)}
         if len(control_change_events) > 0:
             channels_control_change_events_ids = group_data(
                 [control_change_events["channel"]], control_change_events_ids
             )
-            channels_controls = {}
+
             for channel, channel_control_change_events_ids in channels_control_change_events_ids.items():
                 channel_control_change_events = events[channel_control_change_events_ids]
                 controls = np.zeros(len(channel_control_change_events_ids), dtype=control_dtype)
@@ -387,8 +404,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int
                 controls["number"] = channel_control_change_events["value1"]
                 controls["value"] = channel_control_change_events["value2"]
                 channels_controls[channel] = controls
-        else:
-            channels_controls = {channel: np.zeros((0,), dtype=control_dtype) for channel in range(16)}
 
         channels_pedals = {}
         for channel, channel_controls in channels_controls.items():
@@ -785,7 +800,7 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
     )
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def _get_overlapping_notes_pairs_jit(
     start: np.ndarray, duration: np.ndarray, pitch: np.ndarray, order: np.ndarray
 ) -> np.ndarray:
@@ -1036,7 +1051,7 @@ def assert_scores_equal(
 
     assert np.allclose(score1.tempo["bpm"], score2.tempo["bpm"], atol=1e-3), "Different bpm values for tempo events"
     assert np.allclose(score1.tempo["time"], score2.tempo["time"], atol=1e-3), "Different time values for tempo events"
-    for track1, track2 in zip(tracks_1, tracks_2):
+    for track_id, (track1, track2) in enumerate(zip(tracks_1, tracks_2)):
         assert track1.name == track2.name, "Track names are different"
         if not (sort_tracks_with_programs_and_num_notes):
             assert track1.channel == track2.channel, "Track channels are different"
@@ -1048,43 +1063,59 @@ def assert_scores_equal(
         notes1 = track1.notes[order1]
         order2 = np.lexsort((np.arange(len(track2.notes)), track2.notes["start_tick"], track2.notes["pitch"]))
         notes2 = track2.notes[order2]
-        assert np.all(notes1["pitch"] == notes2["pitch"]), "Pitches are different"
+
+        min_len = min(len(notes1), len(notes2))
+        np.nonzero(notes1[:min_len]["start_tick"] != notes2[:min_len]["start_tick"])
+        assert len(notes1) == len(notes2), f"Different number of notes in track {track_id}"
+        assert np.all(notes1["pitch"] == notes2["pitch"]), f"Pitches are different in track {track_id}"
         max_tick_diff = max(abs(notes1["start_tick"] - notes2["start_tick"]))
-        assert max_tick_diff == 0, "Tick difference is not zero"
+        assert max_tick_diff == 0, f"Tick difference is not zero in track {track_id}"
         max_duration_tick_diff = max(abs(notes1["duration_tick"] - notes2["duration_tick"]))
-        assert max_duration_tick_diff == 0, "Duration tick difference is not zero"
+        assert max_duration_tick_diff == 0, f"Duration tick difference is not zero in track {track_id}"
         # max note time difference
         max_start_time_diff = max(abs(notes1["start"] - notes2["start"]))
-        assert max_start_time_diff <= time_tol, f"Max note start time difference {max_start_time_diff}>{time_tol}"
+        assert max_start_time_diff <= time_tol, (
+            f"Max note start time difference {max_start_time_diff}>{time_tol} in track {track_id}"
+        )
         notes_stop_1 = notes1["start"] + notes1["duration"]
         notes_stop_2 = notes2["start"] + notes2["duration"]
         max_stop_diff = max(abs(notes_stop_1 - notes_stop_2))
-        assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol}"
+        assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol} in track {track_id}"
         # max note velocity difference
         velocify_abs_diff = abs(notes1["velocity_on"].astype(np.int16) - notes2["velocity_on"].astype(np.int16))
         max_velocity_diff = max(velocify_abs_diff)
-        assert max_velocity_diff <= value_tol, f"Max note velocity difference {max_velocity_diff}>{value_tol}"
+        assert max_velocity_diff <= value_tol, (
+            f"Max note velocity difference {max_velocity_diff}>{value_tol} in track {track_id}"
+        )
         # max note duration difference
         max_duration_diff = max(abs(notes1["duration"] - notes2["duration"]))
-        assert max_duration_diff <= time_tol, f"Max note duration difference {max_duration_diff}>{time_tol}"
+        assert max_duration_diff <= time_tol, (
+            f"Max note duration difference {max_duration_diff}>{time_tol} in track {track_id}"
+        )
 
         # max control time difference
-        assert track1.controls.shape == track2.controls.shape, "Different number of control events"
+        assert track1.controls.shape == track2.controls.shape, f"Different number of control events in track {track_id}"
         if track1.controls.size > 0:
             max_control_time_diff = max(abs(track1.controls["time"] - track2.controls["time"]))
-            assert max_control_time_diff <= time_tol, f"Max control time difference {max_control_time_diff}>{time_tol}"
+            assert max_control_time_diff <= time_tol, (
+                f"Max control time difference {max_control_time_diff}>{time_tol} in track {track_id}"
+            )
             max_diff = max(max_diff, max_control_time_diff)
         # max pedal time difference
-        assert track1.pedals.shape == track2.pedals.shape, "Different number of pedal events"
+        assert track1.pedals.shape == track2.pedals.shape, f"Different number of pedal events in track {track_id}"
         if track1.pedals.size > 0:
             max_pedal_time_diff = max(abs(track1.pedals["time"] - track2.pedals["time"]))
             max_diff = max(max_diff, max_pedal_time_diff)
-            assert max_pedal_time_diff <= time_tol, f"Max pedal time difference {max_pedal_time_diff}>{time_tol}"
+            assert max_pedal_time_diff <= time_tol, (
+                f"Max pedal time difference {max_pedal_time_diff}>{time_tol} in track {track_id}"
+            )
         # max pitch bend time difference
-        assert track1.pitch_bends.shape == track2.pitch_bends.shape, "Different number of pitch bend events"
+        assert track1.pitch_bends.shape == track2.pitch_bends.shape, (
+            f"Different number of pitch bend events in track {track_id}"
+        )
         if track1.pitch_bends.size > 0:
             max_pitch_bend_time_diff = max(abs(track1.pitch_bends["time"] - track2.pitch_bends["time"]))
             max_diff = max(max_diff, max_pitch_bend_time_diff)
             assert max_pitch_bend_time_diff <= time_tol, (
-                f"Max pitch bend time difference {max_pitch_bend_time_diff}>{time_tol}"
+                f"Max pitch bend time difference {max_pitch_bend_time_diff}>{time_tol} in track {track_id}"
             )

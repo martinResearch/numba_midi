@@ -70,7 +70,7 @@ class Midi:
         assert self.ticks_per_quarter > 0, "ticks_per_quarter must be positive"
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
     """Get the time of each event in ticks and seconds."""
     tick = np.uint32(0)
@@ -100,7 +100,7 @@ def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per
     return events_times
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def read_var_length(data: bytes, offset: int) -> tuple[int, int]:
     """Reads a variable-length quantity from the MIDI file."""
     value = 0
@@ -113,25 +113,25 @@ def read_var_length(data: bytes, offset: int) -> tuple[int, int]:
     return value, offset
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def unpack_uint32(data: bytes) -> int:
     """Unpacks a 4-byte unsigned integer (big-endian)."""
     return (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def unpack_uint8_pair(data: bytes) -> tuple[int, int]:
     """Unpacks two 1-byte unsigned integers."""
     return data[0], data[1]
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
     """Unpacks three 2-byte unsigned integers (big-endian)."""
     return (data[0] << 8) | data[1], (data[2] << 8) | data[3], (data[4] << 8) | data[5]
 
 
-@njit(cache=True, boundscheck=False)
+# @njit(cache=True, boundscheck=True)
 def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):
@@ -141,6 +141,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
     offset += 8
     assert track_length > 0, "Track length must be positive"
     track_end = offset + track_length
+    assert track_end <= len(data), "Track length too large."
     midi_events = List()
     track_name = b""
     tick = np.uint32(0)
@@ -343,7 +344,7 @@ def sort_midi_events(midi_events: np.ndarray) -> np.ndarray:
     return sorted_events
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def encode_delta_time(delta_time: int) -> List:
     """Encodes delta time as a variable-length quantity."""
     if delta_time == 0:
@@ -370,7 +371,7 @@ def _encode_midi_track(track: MidiTrack) -> bytes:
     return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=True)
 def _encode_midi_track_numba(
     name: bytes,
     numerator: int,

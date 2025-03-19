@@ -131,7 +131,7 @@ def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
     return (data[0] << 8) | data[1], (data[2] << 8) | data[3], (data[4] << 8) | data[5]
 
 
-# @njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=True)
 def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):

@@ -3,6 +3,17 @@ A Numba-accelerated Python library for fast MIDI file reading and music score pr
 
 This library is implemented entirely in Python, making it portable and easy to modify. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations. Lexicographic sorting on NumPy arrays minimizes the need for large Python loops, enabling efficient execution.
 
+## Main features
+
+* read and write midi files
+* pure python, making its internals more accessible to python developpers
+* 10x faster than *pretty_midi* for reading
+* event level and note level representations
+* tracks representation based on numpy arrays making it trivial to do vectorized operations on all notes in a track.
+* multiple modes regarding how to process overlapping notes when converting from events to note representation. 
+* conversion to and from priano roll representation
+* conversion functions from/to pretty_midi and symusic 
+
 ## Installation
 
 To install the library, use the following command:
@@ -70,6 +81,6 @@ We obtain the same behavior as *pretty-midi* when using `note_mode=5` and the sa
 Here are some alternative libraries and how they compare to `numba_midi`:
 - **[pretty_midi](https://craffel.github.io/pretty-midi/)**. Implemented using a python object for each note, making it slow compared to `numpa_midi`.
 - **[pypianoroll](https://github.com/salu133445/pypianoroll)**: Focused on piano roll functionalities. It relies on Python loops over notes, which can be slow. It also uses `pretty-midi` for MIDI file loading, which is not optimized for speed.
-- **[symusic](https://github.com/Yikai-Liao/symusic)**: Written in C++ and interfaced with PyBind11, making it extremely fast. However, its C++ implementation makes it less extensible compared to pure Python libraries like `numba_midi`.
+- **[symusic](https://github.com/Yikai-Liao/symusic)**: Written in C++ and interfaced with PyBind11, making it extremely fast. However, its C++ implementation makes it much harder to extend for python developpers compared to a pure Python libraries like `numba_midi`.
 - **[muspy](https://github.com/salu133445/muspy)**: Represents music scores using Python classes, with one `Note` class instance per note. This design prevents the use of efficient NumPy vectorized operations, relying instead on slower Python loops.
 

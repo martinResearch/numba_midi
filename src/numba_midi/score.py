@@ -252,7 +252,7 @@ def extract_notes_start_stop(note_events: np.ndarray, notes_mode: int) -> tuple[
     return note_start_ids, note_stop_ids
 
 
-@njit(cache=True, boundscheck=True)
+# @njit(cache=True, boundscheck=True)
 def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
     sustain_pedal_mask = channel_controls["number"] == 64
     pedal_events = channel_controls[sustain_pedal_mask]
@@ -263,7 +263,7 @@ def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
         pedals_starts = []
         pedals_ends = []
 
-        for k in range(len(pedal_events) - 1):
+        for k in range(len(pedal_events)):
             if pedal_events[k]["value"] == 127 and not active_pedal:
                 active_pedal = True
                 pedal_start = k
@@ -277,9 +277,9 @@ def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
         pedals = np.zeros(len(pedals_starts), dtype=pedal_dtype)
 
         for k, (s, e) in enumerate(zip(pedals_starts, pedals_ends)):
-            pedals[k]["time"] = pedal_events[s]["tick"]
+            pedals[k]["time"] = pedal_events[s]["time"]
             pedals[k]["tick"] = pedal_events[s]["tick"]
-            pedals[k]["duration"] = pedal_events[e]["tick"] - pedal_events[s]["tick"]
+            pedals[k]["duration"] = pedal_events[e]["time"] - pedal_events[s]["time"]
             pedals[k]["duration_tick"] = pedal_events[e]["tick"] - pedal_events[s]["tick"]
 
     else:
@@ -406,7 +406,10 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int
 
         channels_pedals = {}
         for channel, channel_controls in channels_controls.items():
-            pedals = get_pedals_from_controls(channel_controls)
+            if len(channel_controls) > 0:
+                pedals = get_pedals_from_controls(channel_controls)
+            else:
+                pedals = np.zeros((0,), dtype=pedal_dtype)
             channels_pedals[channel] = pedals
 
         for group_keys, track_events_ids in events_groups.items():

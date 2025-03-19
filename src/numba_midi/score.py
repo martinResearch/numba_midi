@@ -7,7 +7,11 @@ from typing import Any, Optional
 from numba.core.decorators import njit
 import numpy as np
 
-from numba_midi.instruments import instrument_to_program
+from numba_midi.instruments import (
+    instrument_to_program,
+    program_to_instrument,
+    program_to_instrument_group,
+)
 from numba_midi.midi import event_dtype, get_event_times, load_midi_score, Midi, MidiTrack, save_midi_file
 
 note_dtype = np.dtype(
@@ -1121,3 +1125,32 @@ def assert_scores_equal(
             assert max_pitch_bend_time_diff <= time_tol, (
                 f"Max pitch bend time difference {max_pitch_bend_time_diff}>{time_tol} in track {track_id}"
             )
+
+
+def get_score_instrumnets(score: Score) -> list[str]:
+    """Get the instruments from a score."""
+    instruments = set()
+    for track in score.tracks:
+        instrument_name = program_to_instrument[track.program]
+        instruments.add(instrument_name)
+    return list(instruments)
+
+
+def get_score_instrument_groups(score: Score) -> list[str]:
+    """Get the instrument groups from a score."""
+    instrument_groups = set()
+    for track in score.tracks:
+        instrument_group_name = program_to_instrument_group[track.program]
+        instrument_groups.add(instrument_group_name)
+    return list(instrument_groups)
+
+
+def get_num_notes_per_group(score: Score) -> dict[str, int]:
+    """Get the number of notes per instrument group."""
+    num_notes_per_group = {}
+    for track in score.tracks:
+        instrument_group_name = program_to_instrument_group[track.program]
+        if instrument_group_name not in num_notes_per_group:
+            num_notes_per_group[instrument_group_name] = 0
+        num_notes_per_group[instrument_group_name] += len(track.notes)
+    return num_notes_per_group

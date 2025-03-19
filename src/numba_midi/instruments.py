@@ -269,6 +269,7 @@ class Instrument(Enum):
 
 instrument_to_program = {instrument: program + 1 for program, instrument in enumerate(all_instruments)}
 
+
 midi_instruments_groups = {
     "Piano": [
         "Acoustic Grand Piano",
@@ -329,6 +330,8 @@ midi_instruments_groups = {
         "Pizzicato Strings",
         "Orchestral Harp",
         "Timpani",
+        "Synth Strings 1",
+        "Synth Strings 2",
     ],
     "Ensemble": [
         "String Ensemble 1",
@@ -431,3 +434,17 @@ midi_instruments_groups = {
         "Gunshot",
     ],
 }
+
+midi_instruments_group_names = list(midi_instruments_groups.keys())
+
+program_to_instrument = {program: instrument for instrument, program in instrument_to_program.items()}
+
+instrument_to_group = {}
+for group, instruments in midi_instruments_groups.items():
+    for instrument in instruments:
+        instrument_to_group[instrument] = group
+
+program_to_instrument_group = {}
+for program, instrument in enumerate(all_instruments):
+    group = instrument_to_group[instrument] if instrument in instrument_to_group else "Unknown"
+    program_to_instrument_group[program] = group

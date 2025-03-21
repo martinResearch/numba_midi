@@ -105,8 +105,14 @@ class Score:
         last_tick = max(track.last_tick() for track in self.tracks)
         return last_tick
 
+    def __post_init__(self) -> None:
+        assert self.tempo.dtype == tempo_dtype, "Tempo must be a structured numpy array with tempo_dtype elements"
+        assert self.tracks is not None, "Tracks must be a list of Track objects"
+        assert len(self.tracks) > 0, "Tracks must be a non-empty list of Track objects"
+        assert self.duration > 0, "Duration must be a positive float"
 
-@njit(cache=True, boundscheck=True)
+
+# @njit(cache=True, boundscheck=True)
 def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.
@@ -123,6 +129,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
     | 5    | Note Off stops all    | no                |
     | 6    | Note Off stops all    | yes               |
     """
+    assert mode in {1, 2, 3, 4, 5, 6}, "mode must be between 1 and 6"
     note_start_ids: list[int] = []
     note_stop_ids: list[int] = []
     active_note_starts: list[int] = []
@@ -140,17 +147,13 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
             # Note on event
             if mode == 1:
                 # stop the all active notes
-                new_active_note_starts.clear()
                 for note in active_note_starts:
                     note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
                     if note_duration > 0:
                         note_start_ids.append(note)
                         note_stop_ids.append(k)
-                    else:
-                        new_active_note_starts.append(note)
                 active_note_starts.clear()
-                for note in new_active_note_starts:
-                    active_note_starts.append(note)
+
             elif mode == 2:
                 # stop all the active notes
                 for note in active_note_starts:
@@ -160,7 +163,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
             active_note_starts.append(k)
         # Note off event
         elif mode in {1, 5}:
-            # stop all the active notes
+            # stop all the active notes whose duration is greater than 0
             new_active_note_starts.clear()
             for note in active_note_starts:
                 note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
@@ -180,7 +183,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
                 note_stop_ids.append(k)
             active_note_starts.clear()
         elif mode == 3:
-            # stop the first active note
+            # stop the first active
             if len(active_note_starts) > 0:
                 note = active_note_starts.pop(0)
                 note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
@@ -193,7 +196,8 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
                 note = active_note_starts.pop(0)
                 note_start_ids.append(note)
                 note_stop_ids.append(k)
-
+        else:
+            raise ValueError(f"Unknown mode {mode}")
     return np.array(note_start_ids), np.array(note_stop_ids)
 
 
@@ -892,14 +896,44 @@ def check_no_overlapping_notes_in_score(score: Score) -> None:
 def time_to_ticks(time: float, tempo: np.ndarray, ticks_per_quarter: int) -> int:
     """Convert a time in seconds to ticks."""
     # get the tempo at the start of the time range
-    tempo_idx = np.searchsorted(tempo["time"], time, side="right") - 1
-    tempo_idx = np.clip(tempo_idx, 0, len(tempo) - 1)
+    if tempo.size > 1:
+        tempo_idx = np.searchsorted(tempo["time"], time, side="right") - 1
+    else:
+        tempo_idx = np.zeros(len(time), dtype=np.int32)
+    tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
     bpm = tempo["bpm"][tempo_idx]
     ref_ticks = tempo["tick"][tempo_idx]
     ref_time = tempo["time"][tempo_idx]
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return (ref_ticks + (time - ref_time) * ticks_per_second).astype(np.int32)
+
+
+def update_ticks(score: Score, tempo: np.ndarray) -> Score:
+    """Update the ticks of the score according to the tempo."""
+    tracks = []
+    for track in score.tracks:
+        new_track = copy(track)
+        new_track.notes["start_tick"] = time_to_ticks(new_track.notes["start"], tempo, score.ticks_per_quarter)
+        new_track.notes["duration_tick"] = (
+            time_to_ticks(new_track.notes["start"] + new_track.notes["duration"], tempo, score.ticks_per_quarter)
+            - new_track.notes["start_tick"]
+        )
+        new_track.pedals["tick"] = time_to_ticks(new_track.pedals["time"], tempo, score.ticks_per_quarter)
+        new_track.controls["tick"] = time_to_ticks(new_track.controls["time"], tempo, score.ticks_per_quarter)
+        new_track.pitch_bends["tick"] = time_to_ticks(new_track.pitch_bends["time"], tempo, score.ticks_per_quarter)
+        tracks.append(new_track)
+
+    return Score(
+        tracks=tracks,
+        duration=score.duration,
+        numerator=score.numerator,
+        denominator=score.denominator,
+        clocks_per_click=score.clocks_per_click,
+        ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
+        tempo=tempo,
+    )
 
 
 def crop_score(score: Score, start: float, duration: float) -> Score:
@@ -1039,6 +1073,7 @@ def assert_scores_equal(
     sort_tracks_with_programs_and_num_notes: bool = False,
     time_tol: float = 1e-3,
     value_tol: float = 1e-2,
+    tick_tol: int = 0,
 ) -> None:
     assert len(score1.tracks) == len(score2.tracks), "The scores have different number of tracks"
     max_diff = 0
@@ -1075,9 +1110,9 @@ def assert_scores_equal(
         assert len(notes1) == len(notes2), f"Different number of notes in track {track_id}"
         assert np.all(notes1["pitch"] == notes2["pitch"]), f"Pitches are different in track {track_id}"
         max_tick_diff = max(abs(notes1["start_tick"] - notes2["start_tick"]))
-        assert max_tick_diff == 0, f"Tick difference is not zero in track {track_id}"
+        assert max_tick_diff <= tick_tol, f"Tick difference larger than {tick_tol} in track {track_id}"
         max_duration_tick_diff = max(abs(notes1["duration_tick"] - notes2["duration_tick"]))
-        assert max_duration_tick_diff == 0, f"Duration tick difference is not zero in track {track_id}"
+        assert max_duration_tick_diff <= tick_tol, f"Duration tick difference is not zero in track {track_id}"
         # max note time difference
         max_start_time_diff = max(abs(notes1["start"] - notes2["start"]))
         assert max_start_time_diff <= time_tol, (

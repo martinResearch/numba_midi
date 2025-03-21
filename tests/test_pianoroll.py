@@ -27,9 +27,9 @@ def test_pianoroll_conversion() -> None:
             score1,
             score2,
             sort_tracks_with_programs_and_num_notes=True,
-            tick_tol=100,
-            time_tol=3 * time_step,
-            value_tol=100.0,
+            tick_tol=150,
+            time_tol=4 * time_step,
+            value_tol=5.0,
         )
 
 

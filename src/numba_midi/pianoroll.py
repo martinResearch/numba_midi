@@ -68,6 +68,7 @@ def _add_notes_to_piano_roll_jit(
     pitch_max: int,
     num_bin_per_semitone: int,
     shorten_notes: bool,
+    antialiasing: bool = False,
 ) -> None:
     # TODO take pitch bend into account
     for note_id in range(len(pitch)):
@@ -83,8 +84,12 @@ def _add_notes_to_piano_roll_jit(
             note_end = note_end - 2 * time_step
 
         col_end_float = note_end / time_step
-        alpha_start = 1.0 - (col_start_float - int(col_start_float))
-        alpha_end = col_end_float - int(col_end_float)
+        if antialiasing:
+            alpha_start = 1.0 - (col_start_float - int(col_start_float))
+            alpha_end = col_end_float - int(col_end_float)
+        else:
+            alpha_start = 1.0
+            alpha_end = 0.0
         row = (note_pitch - pitch_min) * num_bin_per_semitone
 
         piano_roll[row, int(col_start_float)] += alpha_start * note_velocity
@@ -101,6 +106,7 @@ def score_to_piano_roll(
     pitch_max: int,
     num_bin_per_semitone: int,
     shorten_notes: bool = True,
+    antialiasing: bool = False,
 ) -> PianoRoll:
     """Create a piano roll representation of the score.
 
@@ -124,6 +130,7 @@ def score_to_piano_roll(
             pitch_max=pitch_max,
             num_bin_per_semitone=num_bin_per_semitone,
             shorten_notes=shorten_notes,
+            antialiasing=antialiasing,
         )
     channels = np.array([track.channel for track in score.tracks])
     programs = np.array([track.program for track in score.tracks])

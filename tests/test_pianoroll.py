@@ -9,7 +9,7 @@ from numba_midi.score import assert_scores_equal, load_score, remove_control_cha
 
 def test_pianoroll_conversion() -> None:
     """Test pianoroll conversion functions."""
-    midi_files = glob.glob(str(Path(__file__).parent / "data" / "numba_midi" / "*.mid"))
+    midi_files = glob.glob(str(Path(__file__).parent / "data" / "pianoroll" / "*.mid"))
 
     for midi_file in midi_files:
         score1 = load_score(midi_file, notes_mode=1, minimize_tempo=False)

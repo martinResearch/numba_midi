@@ -81,22 +81,27 @@ def _add_notes_to_piano_roll_jit(
         col_start_float = note_start / time_step
         note_end = note_start + note_duration
         if shorten_notes:
-            note_end = note_end - 2 * time_step
+            if antialiasing:
+                note_end = note_end - 2 * time_step
+            else:
+                note_end = note_end - time_step
+        row = (note_pitch - pitch_min) * num_bin_per_semitone
 
         col_end_float = note_end / time_step
         if antialiasing:
             alpha_start = 1.0 - (col_start_float - int(col_start_float))
             alpha_end = col_end_float - int(col_end_float)
-        else:
-            alpha_start = 1.0
-            alpha_end = 0.0
-        row = (note_pitch - pitch_min) * num_bin_per_semitone
+            piano_roll[row, int(col_start_float)] += alpha_start * note_velocity
+            if alpha_end > 0:
+                piano_roll[row, int(col_end_float)] += alpha_end * note_velocity
+            for col in range(int(col_start_float) + 1, int(col_end_float)):
+                piano_roll[row, col] += note_velocity
 
-        piano_roll[row, int(col_start_float)] += alpha_start * note_velocity
-        if alpha_end > 0:
-            piano_roll[row, int(col_end_float)] += alpha_end * note_velocity
-        for col in range(int(col_start_float) + 1, int(col_end_float)):
-            piano_roll[row, col] += note_velocity
+        else:       
+            for col in range(int(col_start_float), int(col_end_float)):
+                piano_roll[row, col] += note_velocity
+       
+
 
 
 def score_to_piano_roll(
@@ -221,6 +226,7 @@ def piano_roll_to_score(
             pitch_min=piano_roll.pitch_min,
             threshold=threshold,
         )
+        assert velocity.max() <= piano_roll_semitone[track_id].max()
         channel = piano_roll.channels[track_id]
         program = piano_roll.programs[track_id]
         midi_track_id = piano_roll.midi_track_ids[track_id]

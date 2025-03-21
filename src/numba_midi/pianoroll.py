@@ -97,11 +97,9 @@ def _add_notes_to_piano_roll_jit(
             for col in range(int(col_start_float) + 1, int(col_end_float)):
                 piano_roll[row, col] += note_velocity
 
-        else:       
+        else:
             for col in range(int(col_start_float), int(col_end_float)):
                 piano_roll[row, col] += note_velocity
-       
-
 
 
 def score_to_piano_roll(

@@ -419,6 +419,9 @@ def _encode_midi_track_numba(
         elif event_type == 5:
             # Tempo Change
             data.extend([0xFF, 0x51, 3, value1 >> 16, (value1 >> 8) & 0xFF, value1 & 0xFF])
+        elif event_type == 6:
+            # Channel Aftertouch
+            data.extend([0xD0 | channel, value1])
         else:
             raise ValueError(f"Invalid event type: {event_type}")
 

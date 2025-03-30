@@ -24,7 +24,7 @@ def test_symusic_conversion() -> None:
         score2 = from_symusic(symusic_score)
 
         (
-            assert_scores_equal(score1, score2, sort_tracks_with_programs_and_num_notes=True),
+            assert_scores_equal(score1, score2, compare_channels=False),
             "The original and converted Score objects are not equal",
         )
 
@@ -34,7 +34,7 @@ def test_symusic_conversion() -> None:
         # Convert back to Score object
         score3 = from_symusic(symusic_score_converted)
         (
-            assert_scores_equal(score1, score3, sort_tracks_with_programs_and_num_notes=True),
+            assert_scores_equal(score1, score3, compare_channels=False),
             "The original and converted Score objects are not equal",
         )
 

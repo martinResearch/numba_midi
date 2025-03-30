@@ -17,7 +17,7 @@ from numba_midi.score import (
 def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     """Convert a PrettyMIDI object to a Score object."""
     tracks = []
-    for instrument_id, instrument in enumerate(midi.instruments):
+    for _, instrument in enumerate(midi.instruments):
         notes = np.empty(len(instrument.notes), dtype=note_dtype)
         for note_id, note in enumerate(instrument.notes):
             notes[note_id]["start"] = note.start
@@ -48,8 +48,8 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
             notes=notes,
             program=instrument.program,
             is_drum=instrument.is_drum,
-            channel=instrument_id,  # TODO: set this to the correct value
-            midi_track_id=instrument_id,  # TODO: set this to the correct value
+            channel=None,  # TODO: set this to the correct value
+            midi_track_id=None,  # TODO: set this to the correct value
             controls=controls,
             pedals=pedals,
             pitch_bends=pitch_bends,
@@ -79,9 +79,8 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     score = Score(
         tracks=tracks,
         duration=midi.get_end_time(),
-        numerator=numerator,
+        time_signature=(numerator, denominator),
         tempo=tempo,
-        denominator=denominator,
         clocks_per_click=clocks_per_click,
         ticks_per_quarter=ticks_per_quarter,
         notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
@@ -137,8 +136,8 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
     # Set the time signature
     midi.time_signature_changes.append(
         pretty_midi.TimeSignature(
-            numerator=score.numerator,
-            denominator=score.denominator,
+            numerator=score.time_signature[0],
+            denominator=score.time_signature[1],
             time=0,
         )
     )

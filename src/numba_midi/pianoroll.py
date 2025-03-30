@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from math import ceil
+from typing import Optional
 
 from numba.core.decorators import njit
 import numpy as np
@@ -14,29 +15,29 @@ from numba_midi.score import (
     pedal_dtype,
     pitch_bend_dtype,
     Score,
-    time_to_ticks,
+    times_to_ticks,
     Track,
 )
 
 
 @dataclass
 class PianoRoll:
-    """Dataclass for piano rolls."""
+    """Dataclass for multi-track piano rolls."""
 
     array: np.ndarray
     time_step: float
     pitch_min: int
     num_bin_per_semitone: int
-    programs: np.ndarray
-    channels: np.ndarray
-    midi_track_ids: np.ndarray
-    ticks_per_quarter: int
-    notated_32nd_notes_per_beat: int
-    numerator: int
-    denominator: int
-    clocks_per_click: int
-    tempo: np.ndarray
+    programs: list[int]
     track_names: list[str]
+
+    ticks_per_quarter: Optional[int] = None
+    midi_track_ids: Optional[list[int]] = None
+    channels: Optional[list[int]] = None
+    time_signature: Optional[tuple[int, int]] = None
+    clocks_per_click: Optional[int] = None
+    tempo: Optional[np.ndarray] = None
+    notated_32nd_notes_per_beat: Optional[int] = None
 
     @property
     def duration(self) -> float:
@@ -46,6 +47,10 @@ class PianoRoll:
     def pitch_max(self) -> int:
         return ceil(self.array.shape[0] / self.num_bin_per_semitone + self.pitch_min)
 
+    @property
+    def num_tracks(self) -> int:
+        return self.array.shape[0]
+
     def __post_init__(self) -> None:
         assert len(self.array.shape) == 3, "Piano roll must be 3D (num_tracks, num_pitch, num_time)"
         assert self.array.dtype == np.uint8, "Piano roll must be uint8"
@@ -54,6 +59,12 @@ class PianoRoll:
         )
         assert self.array.shape[2] > 0, "Piano roll shape[1] must be greater than 0"
         assert self.pitch_min >= 0, "pitch_min must be greater than or equal to 0"
+        if self.midi_track_ids is not None:
+            assert len(self.midi_track_ids) == self.num_tracks, "midi_track_ids must be the same length as num_tracks"
+        if self.channels is not None:
+            assert len(self.channels) == self.num_tracks, "channels must be the same length as num_tracks"
+        if self.track_names is not None:
+            assert len(self.track_names) == self.num_tracks, "track_names must be the same length as num_tracks"
 
 
 @njit(cache=True)
@@ -80,15 +91,13 @@ def _add_notes_to_piano_roll_jit(
         assert note_pitch >= pitch_min and note_pitch < pitch_max, "Pitch out of range"
         col_start_float = note_start / time_step
         note_end = note_start + note_duration
-        if shorten_notes:
-            if antialiasing:
-                note_end = note_end - 2 * time_step
-            else:
-                note_end = note_end - time_step
+
         row = (note_pitch - pitch_min) * num_bin_per_semitone
 
         col_end_float = note_end / time_step
         if antialiasing:
+            if shorten_notes:
+                note_end = note_end - 2 * time_step
             alpha_start = 1.0 - (col_start_float - int(col_start_float))
             alpha_end = col_end_float - int(col_end_float)
             piano_roll[row, int(col_start_float)] += alpha_start * note_velocity
@@ -98,7 +107,12 @@ def _add_notes_to_piano_roll_jit(
                 piano_roll[row, col] += note_velocity
 
         else:
-            for col in range(int(col_start_float), int(col_end_float)):
+            col_start_int = int(col_start_float)
+            col_end_int = int(col_end_float)
+            if shorten_notes:
+                col_end_int -= 1
+            # Note: short notes can be discarded if col_start_int==col_end_int
+            for col in range(col_start_int, col_end_int):
                 piano_roll[row, col] += note_velocity
 
 
@@ -135,19 +149,16 @@ def score_to_piano_roll(
             shorten_notes=shorten_notes,
             antialiasing=antialiasing,
         )
-    channels = np.array([track.channel for track in score.tracks])
-    programs = np.array([track.program for track in score.tracks])
-    midi_track_ids = np.array([track.midi_track_id for track in score.tracks])
+
     return PianoRoll(
         array=piano_roll.astype(np.uint8),
         pitch_min=pitch_min,
         time_step=time_step,
         num_bin_per_semitone=num_bin_per_semitone,
-        channels=channels,
-        programs=programs,
-        midi_track_ids=midi_track_ids,
-        numerator=score.numerator,
-        denominator=score.denominator,
+        channels=[track.channel for track in score.tracks],
+        programs=[track.program for track in score.tracks],
+        midi_track_ids=[track.midi_track_id for track in score.tracks],
+        time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         clocks_per_click=score.clocks_per_click,
@@ -224,10 +235,10 @@ def piano_roll_to_score(
             pitch_min=piano_roll.pitch_min,
             threshold=threshold,
         )
-        assert velocity.max() <= piano_roll_semitone[track_id].max()
-        channel = piano_roll.channels[track_id]
+        # assert velocity.max() <= piano_roll_semitone[track_id].max()
+        channel = piano_roll.channels[track_id] if piano_roll.channels is not None else None
         program = piano_roll.programs[track_id]
-        midi_track_id = piano_roll.midi_track_ids[track_id]
+        midi_track_id = piano_roll.midi_track_ids[track_id] if piano_roll.midi_track_ids is not None else None
 
         # Create the structured array
         notes = np.empty(len(start), dtype=note_dtype)
@@ -244,10 +255,10 @@ def piano_roll_to_score(
         tempo = piano_roll.tempo
         pitch_bends = np.array([], dtype=pitch_bend_dtype)
 
-        notes["start_tick"] = time_to_ticks(notes["start"], tempo, piano_roll.ticks_per_quarter).astype(np.int32)
+        notes["start_tick"] = times_to_ticks(notes["start"], tempo, piano_roll.ticks_per_quarter).astype(np.int32)
 
         notes_ends = notes["start"] + notes["duration"]
-        notes_ends_tick = time_to_ticks(notes_ends, tempo, piano_roll.ticks_per_quarter).astype(np.int32)
+        notes_ends_tick = times_to_ticks(notes_ends, tempo, piano_roll.ticks_per_quarter).astype(np.int32)
         notes["duration_tick"] = notes_ends_tick - notes["start_tick"]
         check_no_overlapping_notes(notes)
         track = Track(
@@ -265,8 +276,7 @@ def piano_roll_to_score(
     return Score(
         tracks=tracks,
         duration=piano_roll.duration,
-        numerator=piano_roll.numerator,
-        denominator=piano_roll.denominator,
+        time_signature=piano_roll.time_signature,
         tempo=tempo,
         clocks_per_click=piano_roll.clocks_per_click,
         ticks_per_quarter=piano_roll.ticks_per_quarter,

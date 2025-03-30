@@ -12,7 +12,7 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
     score_ticks = symusic_score.to(symusic.TimeUnit.tick)
     score_seconds = symusic_score.to(symusic.TimeUnit.second)
 
-    for track_id, (track_ticks, track_secs) in enumerate(zip(score_ticks.tracks, score_seconds.tracks)):
+    for _, (track_ticks, track_secs) in enumerate(zip(score_ticks.tracks, score_seconds.tracks)):
         notes = np.empty(len(track_ticks.notes), dtype=note_dtype)
         track_ticks_notes_numpy = track_ticks.notes.numpy()
         track_secs_notes_numpy = track_secs.notes.numpy()
@@ -51,8 +51,8 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
             notes=notes,
             program=track_ticks.program,
             is_drum=track_ticks.is_drum,
-            channel=track_id,  # TODO: set this to the correct value
-            midi_track_id=track_id,  # TODO: set this to the correct value
+            channel=None,
+            midi_track_id=None,
             controls=controls,
             pedals=pedals,
             pitch_bends=pitch_bends,
@@ -83,9 +83,8 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
     score = Score(
         tracks=tracks,
         duration=score_seconds.end(),
-        numerator=numerator,
+        time_signature=(numerator, denominator),
         tempo=tempo,
-        denominator=denominator,
         clocks_per_click=clocks_per_click,
         ticks_per_quarter=score_seconds.ticks_per_quarter,
         notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
@@ -129,7 +128,7 @@ def to_symusic(score: Score) -> symusic.Score:
     symusic_score = symusic.Score()
     symusic_score.ticks_per_quarter = score.ticks_per_quarter
     symusic_score.time_signatures.append(
-        symusic.TimeSignature(time=0, numerator=score.numerator, denominator=score.denominator)
+        symusic.TimeSignature(time=0, numerator=score.time_signature[0], denominator=score.time_signature[1])
     )
     symusic_score.tempos = tempo
     symusic_score.tracks.extend(tracks)

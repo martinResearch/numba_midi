@@ -36,18 +36,17 @@ class MidiTrack:
     name: str
     events: np.ndarray  # 1D structured numpy array with event_dtype elements
     lyrics: list[tuple[int, str]]  # List of tuples (tick, lyric)
-    numerator: int
-    denominator: int
+    time_signature: tuple[int, int]
     clocks_per_click: int
     notated_32nd_notes_per_beat: int
 
     def __post_init__(self) -> None:
         assert self.events.dtype == event_dtype, "Events must be a structured numpy array with event_dtype elements"
         assert isinstance(self.name, str), "Track name must be a string"
-        assert isinstance(self.numerator, int), "Numerator must be an integer"
-        assert self.numerator > 0, "Numerator must be positive"
-        assert isinstance(self.denominator, int), "Denominator must be an integer"
-        assert self.denominator > 0, "Denominator must be positive"
+        assert isinstance(self.time_signature[0], int), "Numerator must be an integer"
+        assert self.time_signature[0] > 0, "Numerator must be positive"
+        assert isinstance(self.time_signature[1], int), "Denominator must be an integer"
+        assert self.time_signature[1] > 0, "Denominator must be positive"
         assert isinstance(self.clocks_per_click, int), "Clocks per click must be an integer"
         # assert self.clocks_per_click > 0, "Clocks per click must be positive"
         assert isinstance(self.notated_32nd_notes_per_beat, int), "Notated 32nd notes per beat must be an integer"
@@ -326,8 +325,7 @@ def load_midi_bytes(data: bytes) -> Midi:
             name=name,
             lyrics=lyrics,
             events=midi_events_np,
-            numerator=numerator,
-            denominator=denominator,
+            time_signature=(numerator, denominator),
             clocks_per_click=clocks_per_click,
             notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
         )
@@ -362,8 +360,8 @@ def encode_delta_time(delta_time: int) -> List:
 def _encode_midi_track(track: MidiTrack) -> bytes:
     data = _encode_midi_track_numba(
         track.name.encode("utf-8"),  # Pre-encode the name to bytes
-        track.numerator,
-        track.denominator,
+        track.time_signature[0],
+        track.time_signature[1],
         track.clocks_per_click,
         track.notated_32nd_notes_per_beat,
         track.events,
@@ -456,8 +454,7 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
         sorted_events1 = sort_midi_events(track1.events)
         sorted_events2 = sort_midi_events(track2.events)
         assert track1.name == track2.name
-        assert track1.numerator == track2.numerator
-        assert track1.denominator == track2.denominator
+        assert track1.time_signature == track2.time_signature
         assert track1.clocks_per_click == track2.clocks_per_click
         assert track1.notated_32nd_notes_per_beat == track2.notated_32nd_notes_per_beat
         assert np.all(sorted_events1 == sorted_events2)

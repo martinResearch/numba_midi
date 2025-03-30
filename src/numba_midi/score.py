@@ -21,21 +21,21 @@ from numba_midi.midi import event_dtype, get_event_times, load_midi_score, Midi,
 
 note_dtype = np.dtype(
     [
-        ("start", np.float32),
+        ("start", np.float64),
         ("start_tick", np.int32),
-        ("duration", np.float32),
+        ("duration", np.float64),
         ("duration_tick", np.int32),
         ("pitch", np.int32),
         ("velocity_on", np.uint8),
     ]
 )
 
-control_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("number", np.int32), ("value", np.int32)])
+control_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("number", np.int32), ("value", np.int32)])
 pedal_dtype = np.dtype(
-    [("time", np.float32), ("tick", np.int32), ("duration", np.float32), ("duration_tick", np.int32)]
+    [("time", np.float64), ("tick", np.int32), ("duration", np.float64), ("duration_tick", np.int32)]
 )
-pitch_bend_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("value", np.int32)])
-tempo_dtype = np.dtype([("time", np.float32), ("tick", np.int32), ("bpm", np.float32)])
+pitch_bend_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("value", np.int32)])
+tempo_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("bpm", np.float64)])
 
 
 @dataclass

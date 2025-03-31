@@ -1,4 +1,4 @@
-"""Music score representtion based on structured numpy arrays."""
+"""Music score represention based on structured numpy arrays."""
 
 from copy import copy
 from dataclasses import dataclass

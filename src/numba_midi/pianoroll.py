@@ -7,6 +7,7 @@ from typing import Optional
 from numba.core.decorators import njit
 import numpy as np
 
+
 from numba_midi.score import (
     check_no_overlapping_notes,
     check_no_overlapping_notes_in_score,
@@ -17,6 +18,7 @@ from numba_midi.score import (
     Score,
     times_to_ticks,
     Track,
+    tempo_dtype
 )
 
 
@@ -31,13 +33,13 @@ class PianoRoll:
     programs: list[int]
     track_names: list[str]
 
-    ticks_per_quarter: Optional[int] = None
+    ticks_per_quarter: int = 480
+    time_signature: tuple[int, int]= (4,4)
+    clocks_per_click: int = 24
     midi_track_ids: Optional[list[int]] = None
-    channels: Optional[list[int]] = None
-    time_signature: Optional[tuple[int, int]] = None
-    clocks_per_click: Optional[int] = None
+    channels: Optional[list[int]] = None  
     tempo: Optional[np.ndarray] = None
-    notated_32nd_notes_per_beat: Optional[int] = None
+    notated_32nd_notes_per_beat: int = 8
 
     @property
     def duration(self) -> float:
@@ -45,7 +47,7 @@ class PianoRoll:
 
     @property
     def pitch_max(self) -> int:
-        return ceil(self.array.shape[0] / self.num_bin_per_semitone + self.pitch_min)
+        return ceil(self.array.shape[1] / self.num_bin_per_semitone + self.pitch_min)
 
     @property
     def num_tracks(self) -> int:
@@ -255,10 +257,18 @@ def piano_roll_to_score(
         tempo = piano_roll.tempo
         pitch_bends = np.array([], dtype=pitch_bend_dtype)
 
-        notes["start_tick"] = times_to_ticks(notes["start"], tempo, piano_roll.ticks_per_quarter).astype(np.int32)
+        if tempo is None:
+            # default tempo is 120 BPM
+            tempo = np.array([(0,0,120)], dtype=tempo_dtype)
+        if  piano_roll.ticks_per_quarter is None:
+            ticks_per_quarter= 480
+        else:
+            ticks_per_quarter = piano_roll.ticks_per_quarter
+
+        notes["start_tick"] = times_to_ticks(notes["start"], tempo, ticks_per_quarter).astype(np.int32)
 
         notes_ends = notes["start"] + notes["duration"]
-        notes_ends_tick = times_to_ticks(notes_ends, tempo, piano_roll.ticks_per_quarter).astype(np.int32)
+        notes_ends_tick = times_to_ticks(notes_ends, tempo, ticks_per_quarter).astype(np.int32)
         notes["duration_tick"] = notes_ends_tick - notes["start_tick"]
         check_no_overlapping_notes(notes)
         track = Track(

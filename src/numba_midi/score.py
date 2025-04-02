@@ -92,10 +92,10 @@ class Score:
     duration: float
     ticks_per_quarter: int
     tempo: np.ndarray  # 1D structured numpy array with tempo_dtype elements
-    time_signature: tuple[int, int] | None = None
+    time_signature: tuple[int, int] =(4,4)
+    notated_32nd_notes_per_beat: int =8
+    clocks_per_click: int =24
     lyrics: list[tuple[int, str]] | None = None
-    notated_32nd_notes_per_beat: int | None = None
-    clocks_per_click: int | None = None
 
     def __repr__(self) -> str:
         num_notes = sum(len(track.notes) for track in self.tracks)

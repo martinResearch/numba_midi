@@ -32,7 +32,7 @@ jobs:
       - name: Ensure tag matches pyproject.toml version
         run: |
           TAG_VERSION=${GITHUB_REF##*/}
-          PYPROJECT_VERSION=$(grep -Po '(?<=^version = ")[^"]*' src/pyproject.toml)
+          PYPROJECT_VERSION=$(grep -Po '(?<=^version = ")[^"]*' pyproject.toml)
           if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
             echo "Tag version ($TAG_VERSION) does not match pyproject.toml version ($PYPROJECT_VERSION)"
             exit 1

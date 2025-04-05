@@ -438,7 +438,7 @@ def score_to_midi(score: Score) -> Midi:
         midi_tracks.append(
             MidiTrack(
                 name="tempo",
-                lyrics=None,
+                lyrics=[],
                 events=tempo_events,
                 time_signature=score.time_signature,
                 clocks_per_click=score.clocks_per_click,
@@ -457,7 +457,7 @@ def score_to_midi(score: Score) -> Midi:
                     notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
                 )
             )
-        lyrics = None
+        lyrics = []
 
     for track in score.tracks:
         if use_multiple_tracks:

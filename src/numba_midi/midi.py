@@ -35,7 +35,7 @@ class MidiTrack:
 
     name: str
     events: np.ndarray  # 1D structured numpy array with event_dtype elements
-    lyrics: list[tuple[int, str]]  # List of tuples (tick, lyric)
+    lyrics: list[tuple[int, str]] | None  # List of tuples (tick, lyric)
     time_signature: tuple[int, int]
     clocks_per_click: int
     notated_32nd_notes_per_beat: int

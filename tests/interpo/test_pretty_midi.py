@@ -23,20 +23,14 @@ def test_pretty_midi_conversion() -> None:
         # Convert to Score object
         score2 = from_pretty_midi(midi)
 
-        (
-            assert_scores_equal(score1, score2, compare_channels=False),
-            "The original and converted Score objects are not equal",
-        )
+        assert_scores_equal(score1, score2, compare_channels=False)
 
         # Convert back to PrettyMIDI object
         midi_converted = to_pretty_midi(score2)
 
         # Convert back to Score object
         score3 = from_pretty_midi(midi_converted)
-        (
-            assert_scores_equal(score1, score3, compare_channels=False),
-            "The original and converted Score objects are not equal",
-        )
+        assert_scores_equal(score1, score3, compare_channels=False)
 
 
 if __name__ == "__main__":

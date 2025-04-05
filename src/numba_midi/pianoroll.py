@@ -36,8 +36,8 @@ class PianoRoll:
     time_signature: tuple[int, int] = (4, 4)
     clocks_per_click: int = 24
     notated_32nd_notes_per_beat: int = 8
-    midi_track_ids: Optional[list[int]] = None
-    channels: Optional[list[int]] = None
+    midi_track_ids: Optional[list[int | None]] = None
+    channels: Optional[list[int | None]] = None
     tempo: Optional[np.ndarray] = None
 
     @property
@@ -229,6 +229,12 @@ def piano_roll_to_score(
         piano_roll.array.shape[0], -1, piano_roll.num_bin_per_semitone, piano_roll.array.shape[2]
     ).max(axis=2)
     tracks = []
+
+    if piano_roll.tempo is None:
+        # default tempo is 120 BPM
+        tempo = np.array([(0, 0, 120)], dtype=tempo_dtype)
+    else:
+        tempo = piano_roll.tempo
     for track_id in range(piano_roll_semitone.shape[0]):
         start, duration, pitch, velocity = _piano_roll_to_score_jit(
             piano_roll=piano_roll_semitone[track_id],
@@ -253,12 +259,8 @@ def piano_roll_to_score(
         controls = np.array([], dtype=control_dtype)
         pedals = np.array([], dtype=pedal_dtype)
 
-        tempo = piano_roll.tempo
         pitch_bends = np.array([], dtype=pitch_bend_dtype)
 
-        if tempo is None:
-            # default tempo is 120 BPM
-            tempo = np.array([(0, 0, 120)], dtype=tempo_dtype)
         if piano_roll.ticks_per_quarter is None:
             ticks_per_quarter = 480
         else:

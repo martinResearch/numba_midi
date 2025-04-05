@@ -24,7 +24,7 @@ This library is implemented entirely in Python, making it portable and easy to m
 To install the library, use the following command:
 
 ```bash
-pip install git+https://github.com/martinResearch/numba_midi.git
+pip install numba_midi
 ```
 
 ## Music Score Interfaces

@@ -457,7 +457,7 @@ def score_to_midi(score: Score) -> Midi:
                     notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
                 )
             )
-        lyrics = []
+        lyrics = None
 
     for track in score.tracks:
         if use_multiple_tracks:

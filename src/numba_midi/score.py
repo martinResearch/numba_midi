@@ -2,7 +2,7 @@
 
 from copy import copy
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 
@@ -18,6 +18,14 @@ from numba_midi.instruments import (
     program_to_instrument_group,
 )
 from numba_midi.midi import event_dtype, get_event_times, load_midi_score, Midi, MidiTrack, save_midi_file
+
+NotesMode = Literal["no_overlap", "first_in_first_out", "note_off_stops_all"]
+
+notes_mode_mapping: dict[NotesMode, int] = {
+    "no_overlap": 0,
+    "first_in_first_out": 1,
+    "note_off_stops_all": 2,
+}
 
 note_dtype = np.dtype(
     [
@@ -90,12 +98,13 @@ class Score:
 
     tracks: list[Track]
     duration: float
-    ticks_per_quarter: int
     tempo: np.ndarray  # 1D structured numpy array with tempo_dtype elements
-    time_signature: tuple[int, int] =(4,4)
-    notated_32nd_notes_per_beat: int =8
-    clocks_per_click: int =24
     lyrics: list[tuple[int, str]] | None = None
+
+    ticks_per_quarter: int = 480
+    time_signature: tuple[int, int] = (4, 4)
+    notated_32nd_notes_per_beat: int = 8
+    clocks_per_click: int = 24
 
     def __repr__(self) -> str:
         num_notes = sum(len(track.notes) for track in self.tracks)
@@ -148,12 +157,14 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
     return output
 
 
-def extract_notes_start_stop(note_events: np.ndarray, notes_mode: int) -> tuple[np.ndarray, np.ndarray]:
+def extract_notes_start_stop(note_events: np.ndarray, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
     notes_order = np.lexsort(
         (note_events["event_type"], note_events["tick"], note_events["value1"], note_events["channel"])
     )
     sorted_note_events = note_events[notes_order]
-    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(sorted_note_events, notes_mode)
+    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(
+        sorted_note_events, notes_mode_mapping[notes_mode]
+    )
     if len(ordered_note_start_ids) > 0:
         note_start_ids = notes_order[ordered_note_start_ids]
         note_stop_ids = notes_order[ordered_note_stop_ids]
@@ -182,7 +193,7 @@ def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
     return pedals
 
 
-def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: int = 5) -> Score:
+def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: NotesMode = "note_off_stops_all") -> Score:
     """Convert a MidiScore to a Score.
 
     Convert from event-based representation notes with durations
@@ -530,7 +541,10 @@ def score_to_midi(score: Score) -> Midi:
 
 
 def load_score(
-    file_path: str, notes_mode: int = 5, minimize_tempo: bool = True, check_round_trip: bool = False
+    file_path: str,
+    notes_mode: NotesMode = "note_off_stops_all",
+    minimize_tempo: bool = True,
+    check_round_trip: bool = False,
 ) -> Score:
     """Loads a MIDI file and converts it to a Score."""
     midi_raw = load_midi_score(file_path)

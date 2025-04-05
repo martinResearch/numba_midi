@@ -65,20 +65,11 @@ Should we create a note with duration 0 or 10 starting on tick 150, or no note a
 If a note is not closed when we reach the end of the song, should it be discarded, or should we keep it and use the end of the song as the end time?
 
 We provide control to the user on how to handle overlapping note and zero length notes
-through the parameter `note_mode` that allows choosing among multiple modes:
+through the parameter `note_mode` with type `NotesMode = Literal["no_overlap", "first_in_first_out", "note_off_stops_all"]`
 
-| mode | strategy              | zero-length notes |
-|------|-----------------------|-------------------|
-| 1    | no overlap            | no                |
-| 2    | no overlap            | yes               |
-| 3    | first-in-first-out    | no                |
-| 4    | first-in-first-out    | yes               |
-| 5    | Note Off stops all    | no                |
-| 6    | Note Off stops all    | yes               |
+We obtain the same behavior as *pretty-midi* when using `note_mode="note_off_stops_all"` and the same behavior as *symusic* when using `note_mode="first_in_first_out"`.
 
-We obtain the same behavior as *pretty-midi* when using `note_mode=5` and the same behavior as *symusic* when using `note_mode=3`.
-
-**Note:** Using no overlap (mode 1 or 2) is not as strong as enforcing a monophonic constraint on the instrument: two notes with different pitches can still overlap in time. Although polyphonic, a piano should use `note_overlap=1` to be realistic.
+**Note:** Using `"no overlap"` is not as strong as enforcing a monophonic constraint on the instrument: two notes with different pitches can still overlap in time. Although polyphonic, a piano should use `"no overlap"`to be realistic.
 
 ## Alternatives
 

@@ -7,7 +7,6 @@ from typing import Optional
 from numba.core.decorators import njit
 import numpy as np
 
-
 from numba_midi.score import (
     check_no_overlapping_notes,
     check_no_overlapping_notes_in_score,
@@ -16,9 +15,9 @@ from numba_midi.score import (
     pedal_dtype,
     pitch_bend_dtype,
     Score,
+    tempo_dtype,
     times_to_ticks,
     Track,
-    tempo_dtype
 )
 
 
@@ -34,12 +33,12 @@ class PianoRoll:
     track_names: list[str]
 
     ticks_per_quarter: int = 480
-    time_signature: tuple[int, int]= (4,4)
+    time_signature: tuple[int, int] = (4, 4)
     clocks_per_click: int = 24
-    midi_track_ids: Optional[list[int]] = None
-    channels: Optional[list[int]] = None  
-    tempo: Optional[np.ndarray] = None
     notated_32nd_notes_per_beat: int = 8
+    midi_track_ids: Optional[list[int]] = None
+    channels: Optional[list[int]] = None
+    tempo: Optional[np.ndarray] = None
 
     @property
     def duration(self) -> float:
@@ -259,9 +258,9 @@ def piano_roll_to_score(
 
         if tempo is None:
             # default tempo is 120 BPM
-            tempo = np.array([(0,0,120)], dtype=tempo_dtype)
-        if  piano_roll.ticks_per_quarter is None:
-            ticks_per_quarter= 480
+            tempo = np.array([(0, 0, 120)], dtype=tempo_dtype)
+        if piano_roll.ticks_per_quarter is None:
+            ticks_per_quarter = 480
         else:
             ticks_per_quarter = piano_roll.ticks_per_quarter
 

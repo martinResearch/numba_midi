@@ -11,9 +11,8 @@ dependencies = ["numba>=0.61","numpy"]
 readme = "../README.md"
 license = {text = "MIT"}
 
-urls = { 
-  "Homepage" = "https://github.com/martinResearch/numba_midi",
+[project.urls]
+Homepage = "https://github.com/martinResearch/numba_midi"
 
-}
 [tool.setuptools.package-data]
 "numba_midi" = ["py.typed"]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "numba_midi"
-version = "0.1.1"
+version = "0.1.2"
 description = "numba-accelerated python midi score processing library."
 authors = [{ name = "Martin de La Gorce" }]
 dependencies = ["numba>=0.61","numpy"]

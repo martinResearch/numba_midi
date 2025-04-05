@@ -39,6 +39,6 @@ jobs:
           fi
 
       - name: Build source distribution from src
-        run: python -m build ./src --sdist --outdir dist    
+        run: python -m build --sdist --outdir dist    
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

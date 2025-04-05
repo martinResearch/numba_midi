@@ -2,13 +2,20 @@
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [project]
 name = "numba_midi"
 version = "0.1.2"
 description = "numba-accelerated python midi score processing library."
 authors = [{ name = "Martin de La Gorce" }]
 dependencies = ["numba>=0.61","numpy"]
-readme = "../README.md"
+readme = "README.md"
 license = {text = "MIT"}
 
 [project.urls]

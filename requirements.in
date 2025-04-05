@@ -1,7 +1,7 @@
 ruff
 mypy
 pytest
--e ./src/
+-e .
 
 # for the tests
 symusic

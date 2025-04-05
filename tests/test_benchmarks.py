@@ -20,7 +20,7 @@ def test_benchmark() -> None:
         for _ in range(num_iterations):
             start_time = time.perf_counter()
             # load the score using numba_midi
-            load_score(midi_file, notes_mode=3, minimize_tempo=False)
+            load_score(midi_file, notes_mode="note_off_stops_all", minimize_tempo=False)
             end_time = time.perf_counter()
             durations.append(end_time - start_time)
         min_duration = min(durations)

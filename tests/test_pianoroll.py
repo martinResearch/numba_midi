@@ -12,7 +12,7 @@ def test_pianoroll_conversion() -> None:
     midi_files = glob.glob(str(Path(__file__).parent / "data" / "pianoroll" / "*.mid"))
 
     for midi_file in midi_files:
-        score1 = load_score(midi_file, notes_mode=1, minimize_tempo=False)
+        score1 = load_score(midi_file, notes_mode="no_overlap", minimize_tempo=False)
 
         # Convert to pianoroll object
 

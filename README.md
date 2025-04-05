@@ -12,11 +12,12 @@ This library is implemented entirely in Python, making it portable and easy to m
 * read and write midi files
 * pure python, making its internals more accessible to python developpers
 * 10x faster than *pretty_midi* for reading
-* event level and note level representations
+* events (note on and off) and notes (start and duration) representations
 * tracks representation based on numpy arrays making it trivial to do vectorized operations on all notes in a track.
 * multiple modes regarding how to process overlapping notes when converting from events to note representation. 
 * conversion to and from priano roll representation
-* conversion functions from/to pretty_midi and symusic 
+* conversion functions from/to pretty_midi and symusic
+* timestamps and durations both in seconds and ticks
 
 ## Installation
 

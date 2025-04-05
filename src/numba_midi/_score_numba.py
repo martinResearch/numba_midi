@@ -3,21 +3,21 @@ import numpy as np
 
 
 @njit(cache=True, boundscheck=True)
-def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) -> tuple[np.ndarray, np.ndarray]:
+def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, notes_mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.
 
     We provide control to the user on how to handle overlapping note and zero length notes
-    through the parameter `note_mode` that allows choosing among multiple modes:
+    through the parameter `notes_mode` that allows choosing among multiple modes:
 
-    | mode | strategy              |
+    | notes_mode | strategy              |
     |------|-----------------------|
     | 0    | no overlap            |
     | 1    | first-in-first-out    |
     | 2    | Note Off stops all    |
 
     """
-    assert mode in {0, 1, 2}, "mode must be between 1 and 6"
+    assert notes_mode in {0, 1, 2}, "mode must be between 1 and 6"
     note_start_ids: list[int] = []
     note_stop_ids: list[int] = []
     active_note_starts: list[int] = []
@@ -33,7 +33,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
 
         if sorted_note_events[k]["event_type"] == 0 and sorted_note_events[k]["value2"] > 0:
             # Note on event
-            if mode == 0:
+            if notes_mode == 0:
                 # stop the all active notes
                 for note in active_note_starts:
                     note_duration = sorted_note_events[k]["tick"] - sorted_note_events[note]["tick"]
@@ -43,7 +43,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
                 active_note_starts.clear()
             active_note_starts.append(k)
         # Note off event
-        elif mode in {0, 2}:
+        elif notes_mode in {0, 2}:
             # stop all the active notes whose duration is greater than 0
             new_active_note_starts.clear()
             for note in active_note_starts:
@@ -57,7 +57,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
             for note in new_active_note_starts:
                 active_note_starts.append(note)
 
-        elif mode == 1:
+        elif notes_mode == 1:
             # stop the first active
             if len(active_note_starts) > 0:
                 note = active_note_starts.pop(0)
@@ -66,7 +66,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, mode: int) ->
                     note_start_ids.append(note)
                     note_stop_ids.append(k)
         else:
-            raise ValueError(f"Unknown mode {mode}")
+            raise ValueError(f"Unknown mode {notes_mode}")
     return np.array(note_start_ids), np.array(note_stop_ids)
 
 

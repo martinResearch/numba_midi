@@ -1040,7 +1040,7 @@ def assert_scores_equal(
             )
 
 
-def get_score_instrumnets(score: Score) -> list[str]:
+def get_score_instruments(score: Score) -> list[str]:
     """Get the instruments from a score."""
     instruments = set()
     for track in score.tracks:

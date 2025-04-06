@@ -541,7 +541,9 @@ def load_score(
     """Loads a MIDI file and converts it to a Score."""
     with open(file_path, "rb") as file:
         data = file.read()
-    score = load_score_bytes(data)
+    score = load_score_bytes(
+        data, notes_mode=notes_mode, minimize_tempo=minimize_tempo, check_round_trip=check_round_trip
+    )
     return score
 
 

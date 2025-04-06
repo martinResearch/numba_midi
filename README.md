@@ -1,23 +1,22 @@
 # numba_midi
 
-
 ![python_package](https://github.com/martinResearch/numba_midi/actions/workflows//python-package.yml/badge.svg)
 
 A Numba-accelerated Python library for fast MIDI file reading and music score processing.
 
-This library is implemented entirely in Python, making it portable and easy to modify and extend for python developpers. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note Python class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations. 
+This library is implemented entirely in Python, making it portable and easy to modify and extend for Python developers. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note Python class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations.
 
 ## Main features
 
-* read and write midi files
-* pure python, making its internals more accessible to python developpers
-* 7x faster on average than *pretty_midi* for reading a midi file from disk.
-* events (note on and off) and notes (start and duration) representations
-* tracks representation based on numpy arrays making it trivial to do vectorized operations on all notes in a track.
-* multiple modes regarding how to process overlapping notes when converting from events to note representation. 
-* conversion to and from priano roll representation
-* conversion functions from/to pretty_midi and symusic
-* timestamps and durations both in seconds and ticks
+* Read and write MIDI files.
+* Pure Python, making its internals more accessible to Python developers.
+* 7x faster on average than *pretty_midi* for reading a MIDI file from disk.
+* Events (note on and off) and notes (start and duration) representations.
+* Tracks representation based on NumPy arrays, making it trivial to do vectorized operations on all notes in a track.
+* Multiple modes regarding how to process overlapping notes when converting from events to note representation.
+* Conversion to and from piano roll representation.
+* Conversion functions from/to `pretty_midi` and `symusic`.
+* Timestamps and durations both in seconds and ticks.
 
 ## Installation
 
@@ -38,7 +37,7 @@ The library includes a `PianoRoll` dataclass with conversion functions to seamle
 
 ## Interoperability
 
-We provide functions to convert from/to score from the **symusic** and **pretty_midi** liberaries in 
+We provide functions to convert from/to score from the **symusic** and **pretty_midi** libraries in 
 [symusic.py](./src/numba_midi/interop/symusic.py) 
 and [pretty_midi.py](./src/numba_midi/interop/pretty_midi.py) respectively.
 
@@ -60,38 +59,36 @@ For example, for a given channel and pitch, we can have:
 | 150  | 1       | Off  | 80    | 0        |
 | 160  | 1       | Off  | 80    | 0        |
 
-Should the *Off* event on tick 120 stop all three notes, the first two notes, or just the first one?
-Should the first note stop at tick 110 when we have a new note to avoid any overlap? 
-Should we create a note with duration 0 or 10 starting on tick 150, or no note at all? 
+Should the *Off* event on tick 120 stop all three notes, the first two notes, or just the first one?  
+Should the first note stop at tick 110 when we have a new note to avoid any overlap?  
+Should we create a note with duration 0 or 10 starting on tick 150, or no note at all?  
 If a note is not closed when we reach the end of the song, should it be discarded, or should we keep it and use the end of the song as the end time?
 
-We provide control to the user on how to handle overlapping note and zero length notes
-through the parameter `notes_mode` with type `NotesMode = Literal["no_overlap", "first_in_first_out", "note_off_stops_all"]`
+We provide control to the user on how to handle overlapping notes and zero-length notes through the parameter `notes_mode` with type `NotesMode = Literal["no_overlap", "first_in_first_out", "note_off_stops_all"]`.
 
 We obtain the same behavior as *pretty-midi* when using `notes_mode="note_off_stops_all"` and the same behavior as *symusic* when using `notes_mode="first_in_first_out"`.
 
-**Note:** Using `"no overlap"` is not as strong as enforcing a monophonic constraint on the instrument: two notes with different pitches can still overlap in time. Although polyphonic, a piano should use `"no overlap"`to be realistic.
+**Note:** Using `"no_overlap"` is not as strong as enforcing a monophonic constraint on the instrument: two notes with different pitches can still overlap in time. Although polyphonic, a piano should use `"no_overlap"` to be realistic.
 
 ## Benchmark
 
-We measure the loading speed by taking the first 1000 midi files (after sorting the paths) from the Lakh matched midi dataset. We measure both the time it takes to load from disk and the time it take to load from raw bytes already in memory if that is available. We take the minimum duration over 10 runs for each file. We compute the loading speed in MB/sec for each file and compute the median values. We ignore the files that could not be loaded when computing the median. The benchmark executing with Python 3.11.10 
-on a laptop with a intel i7-13800H processor cadenced at 2.9 Ghz.
+We measure the loading speed by taking the first 1000 MIDI files (after sorting the paths) from the Lakh matched MIDI dataset. We measure both the time it takes to load from disk and the time it takes to load from raw bytes already in memory if that is available. We take the minimum duration over 10 runs for each file. We compute the loading speed in MB/sec for each file and compute the median values. We ignore the files that could not be loaded when computing the median. The benchmark was executed with Python 3.11.10 
+on a laptop with an Intel i7-13800H processor clocked at 2.9 GHz.
 
-| Library   | disk median MB/s| disk average MB/s | memory Median MB/s | memory average MB/s  | #failure|
-|-----------|------------| -----|-----|-----|-----|
-|numba_midi |  3.8  | 4.1 | 5.8 | 5.6| 4|
-|symusic    |  85 | 86 | 164|  172| 4|
-|pretty_midi|  0.52 |0.52 |x|x|8|
+| Library   | Disk Median MB/s | Disk Average MB/s | Memory Median MB/s | Memory Average MB/s | #Failures |
+|-----------|------------------|-------------------|---------------------|---------------------|-----------|
+| numba_midi | 3.8              | 4.1               | 5.8                 | 5.6                 | 4         |
+| symusic    | 85               | 86                | 164                 | 172                 | 4         |
+| pretty_midi| 0.52             | 0.52              | x                   | x                   | 8         |
 
-When reading from disk we are about 7x faster than pretty_midi and 22x slower than symusic.
+When reading from disk, we are about 7x faster than *pretty_midi* and 22x slower than *symusic*.
 
-Note: we could probably get a 2x speedup with a reasonable amount of effort by moving more code to numba jit-compiled functions.
+**Note:** We could probably get a 2x speedup with a reasonable amount of effort by moving more code to Numba JIT-compiled functions.
 
 ## Alternatives
 
 Here are some alternative libraries and how they compare to `numba_midi`:
-- **[pretty_midi](https://craffel.github.io/pretty-midi/)**. Implemented using a python object for each note, making it slow compared to `numpa_midi`.
+- **[pretty_midi](https://craffel.github.io/pretty-midi/)**: Implemented using a Python object for each note, making it slow compared to `numba_midi`.
 - **[pypianoroll](https://github.com/salu133445/pypianoroll)**: Focused on piano roll functionalities. It relies on Python loops over notes, which can be slow. It also uses `pretty-midi` for MIDI file loading, which is not optimized for speed.
-- **[symusic](https://github.com/Yikai-Liao/symusic)**: Written in C++ and interfaced with PyBind11, making it extremely fast. However, its C++ implementation makes it much harder to extend for python developpers compared to a pure Python libraries like `numba_midi`.
+- **[symusic](https://github.com/Yikai-Liao/symusic)**: Written in C++ and interfaced with PyBind11, making it extremely fast. However, its C++ implementation makes it much harder to extend for Python developers compared to pure Python libraries like `numba_midi`.
 - **[muspy](https://github.com/salu133445/muspy)**: Represents music scores using Python classes, with one `Note` class instance per note. This design prevents the use of efficient NumPy vectorized operations, relying instead on slower Python loops.
-

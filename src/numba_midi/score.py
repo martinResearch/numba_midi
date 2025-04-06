@@ -326,7 +326,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
 
             track_notes_ids = note_groups[group_keys]
             track_notes_ids = np.sort(track_notes_ids)  # to keep the original order of the notes in the midi
-            # print(f"{group_keys} {len(track_notes_ids)}")
             track_program, track_channel = group_keys
             assert track_program >= 0 and track_program < 128, "program should be between 0 and 127"
             assert track_channel >= 0 and track_channel < 16, "channel should be between 0 and 15"
@@ -334,13 +333,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             track_events_times = events_times[track_events_ids]
             track_events_ticks = events_ticks[track_events_ids]
             assert np.all(np.diff(track_events_ticks) >= 0)
-
-            pitch_bends_mask = track_events["event_type"] == 2
-            pitch_bends_events = track_events[pitch_bends_mask]
-            pitch_bends = np.zeros(len(pitch_bends_events), dtype=pitch_bend_dtype)
-            pitch_bends["time"] = track_events_times[pitch_bends_mask]
-            pitch_bends["tick"] = track_events_ticks[pitch_bends_mask]
-            pitch_bends["value"] = pitch_bends_events["value1"]
 
             pitch_bends_mask = track_events["event_type"] == 2
             pitch_bends_events = track_events[pitch_bends_mask]

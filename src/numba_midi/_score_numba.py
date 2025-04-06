@@ -156,26 +156,3 @@ def _get_overlapping_notes_pairs_jit(
     else:
         result = np.array(overlapping_notes, dtype=np.int64)
     return result
-
-
-@njit(cache=True, boundscheck=False)
-def group_data_jit(keys: tuple[np.ndarray]) -> np.ndarray:
-    # make sure the keys have the same length
-    for key_array in keys:
-        assert len(key_array) > 0, "Keys must have at least one element"
-        assert len(key_array) == len(keys[0]), "Keys must have the same length"
-
-    num_elements = len(keys[0])
-    outputs_lists: dict[tuple, list[int]] = {}
-    for i in range(num_elements):
-        key = tuple([key_array[i] for key_array in keys])
-        # if len(keys) == 1:
-        #     key = key[0]
-        if key not in outputs_lists:
-            outputs_lists[key] = []
-        outputs_lists[key].append(i)
-
-    # convert the lists to numpy arrays
-    outputs = {key: np.array(v, dtype=np.int64) for key, v in outputs_lists.items()}
-
-    return outputs

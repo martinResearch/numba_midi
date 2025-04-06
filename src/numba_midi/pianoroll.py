@@ -42,7 +42,7 @@ class PianoRoll:
 
     @property
     def duration(self) -> float:
-        return self.array.shape[1] * self.time_step
+        return self.array.shape[2] * self.time_step
 
     @property
     def pitch_max(self) -> int:

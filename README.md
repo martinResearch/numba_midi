@@ -11,7 +11,7 @@ This library is implemented entirely in Python, making it portable and easy to m
 
 * read and write midi files
 * pure python, making its internals more accessible to python developpers
-* 10x faster than *pretty_midi* for reading
+* 7x faster on average than *pretty_midi* for reading a midi file from disk.
 * events (note on and off) and notes (start and duration) representations
 * tracks representation based on numpy arrays making it trivial to do vectorized operations on all notes in a track.
 * multiple modes regarding how to process overlapping notes when converting from events to note representation. 
@@ -71,6 +71,21 @@ through the parameter `notes_mode` with type `NotesMode = Literal["no_overlap", 
 We obtain the same behavior as *pretty-midi* when using `notes_mode="note_off_stops_all"` and the same behavior as *symusic* when using `notes_mode="first_in_first_out"`.
 
 **Note:** Using `"no overlap"` is not as strong as enforcing a monophonic constraint on the instrument: two notes with different pitches can still overlap in time. Although polyphonic, a piano should use `"no overlap"`to be realistic.
+
+## Benchmark
+
+We measure the loading speed by taking the first 1000 midi files (after sorting the paths) from the Lakh matched midi dataset. We measure both the time it takes to load from disk and the time it take to load from raw bytes already in memory if that is available. We take the minimum duration over 10 runs for each file. We compute the loading speed in MB/sec for each file and compute the median values. We ignore the files that could not be loaded when computing the median. The benchmark executing with Python 3.11.10 
+on a laptop with a intel i7-13800H processor cadenced at 2.9 Ghz.
+
+| Library   | disk median MB/s| disk average MB/s | memory Median MB/s | memory average MB/s  | #failure|
+|-----------|------------| -----|-----|-----|-----|
+|numba_midi |  3.8  | 4.1 | 5.8 | 5.6| 4|
+|symusic    |  85 | 86 | 164|  172| 4|
+|pretty_midi|  0.52 |0.52 |x|x|8|
+
+When reading from disk we are about 7x faster than pretty_midi and 22x slower than symusic.
+
+Note: we could probably get a 2x speedup with a reasonable amount of effort by moving more code to numba jit-compiled functions.
 
 ## Alternatives
 

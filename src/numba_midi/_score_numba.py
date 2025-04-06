@@ -2,7 +2,7 @@ from numba.core.decorators import njit
 import numpy as np
 
 
-@njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=False)
 def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, notes_mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
     The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.
@@ -70,7 +70,7 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, notes_mode: i
     return np.array(note_start_ids), np.array(note_stop_ids)
 
 
-@njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=False)
 def get_events_program(events: np.ndarray) -> np.ndarray:
     channel_to_program = np.zeros((16), dtype=np.int32)
     program = np.zeros((len(events)), dtype=np.int32)
@@ -82,7 +82,7 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
     return program
 
 
-@njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=False)
 def get_pedals_from_controls_jit(channel_controls: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     # remove heading pedal off events appearing any pedal on event
     active_pedal = False
@@ -104,7 +104,7 @@ def get_pedals_from_controls_jit(channel_controls: np.ndarray) -> tuple[np.ndarr
     return np.array(pedals_starts), np.array(pedals_ends)
 
 
-@njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=False)
 def _get_overlapping_notes_pairs_jit(
     start: np.ndarray, duration: np.ndarray, pitch: np.ndarray, order: np.ndarray
 ) -> np.ndarray:
@@ -156,3 +156,26 @@ def _get_overlapping_notes_pairs_jit(
     else:
         result = np.array(overlapping_notes, dtype=np.int64)
     return result
+
+
+@njit(cache=True, boundscheck=False)
+def group_data_jit(keys: tuple[np.ndarray]) -> np.ndarray:
+    # make sure the keys have the same length
+    for key_array in keys:
+        assert len(key_array) > 0, "Keys must have at least one element"
+        assert len(key_array) == len(keys[0]), "Keys must have the same length"
+
+    num_elements = len(keys[0])
+    outputs_lists: dict[tuple, list[int]] = {}
+    for i in range(num_elements):
+        key = tuple([key_array[i] for key_array in keys])
+        # if len(keys) == 1:
+        #     key = key[0]
+        if key not in outputs_lists:
+            outputs_lists[key] = []
+        outputs_lists[key].append(i)
+
+    # convert the lists to numpy arrays
+    outputs = {key: np.array(v, dtype=np.int64) for key, v in outputs_lists.items()}
+
+    return outputs

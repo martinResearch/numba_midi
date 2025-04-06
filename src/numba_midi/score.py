@@ -17,7 +17,14 @@ from numba_midi.instruments import (
     program_to_instrument,
     program_to_instrument_group,
 )
-from numba_midi.midi import event_dtype, get_event_times, load_midi_score, Midi, MidiTrack, save_midi_file
+from numba_midi.midi import (
+    event_dtype,
+    get_event_times,
+    load_midi_bytes,
+    Midi,
+    MidiTrack,
+    save_midi_file,
+)
 
 NotesMode = Literal["no_overlap", "first_in_first_out", "note_off_stops_all"]
 
@@ -128,6 +135,7 @@ class Score:
 
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
+    """Group data by keys."""
     order = np.lexsort(keys)
     # make sure the keys have the same length
     for key_array in keys:
@@ -144,16 +152,10 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
         key = tuple([key_array[order[starts[i]]] for key_array in keys])
         if len(keys) == 1:
             key = key[0]
-        group = order[starts[i] : ends[i]]
         if data is not None:
             output[key] = data[order[starts[i] : ends[i]]]
         else:
             output[key] = order[starts[i] : ends[i]]
-        if len(keys) == 1:
-            assert np.all(keys[0][group] == key), f"keys[0][group] {keys[0][group]} != key {key}"
-        else:
-            for j in range(len(keys)):
-                assert np.all(keys[j][group] == key[j])
     return output
 
 
@@ -252,7 +254,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         clocks_per_click = midi_track.clocks_per_click
         notated_32nd_notes_per_beat = midi_track.notated_32nd_notes_per_beat
 
-        # get the program for each channel
+        # get the program for each event
         events_programs = get_events_program(midi_track.events)
 
         events = midi_track.events
@@ -379,8 +381,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
                 )
                 tracks.append(track)
 
-    # sort the tracks by channel and program
-    # tracks.sort(key=lambda x: (x.channel, x.program))
     return Score(
         tracks=tracks,
         lyrics=lyrics,
@@ -547,11 +547,23 @@ def load_score(
     check_round_trip: bool = False,
 ) -> Score:
     """Loads a MIDI file and converts it to a Score."""
-    midi_raw = load_midi_score(file_path)
+    with open(file_path, "rb") as file:
+        data = file.read()
+    score = load_score_bytes(data)
+    return score
+
+
+def load_score_bytes(
+    data: bytes,
+    notes_mode: NotesMode = "note_off_stops_all",
+    minimize_tempo: bool = True,
+    check_round_trip: bool = False,
+) -> Score:
+    midi_raw = load_midi_bytes(data)
     score = midi_to_score(midi_raw, minimize_tempo=minimize_tempo, notes_mode=notes_mode)
 
     if check_round_trip:
-        # check if the two score can be converted back and forth
+        # check if the two scores can be converted back and forth
         midi_raw2 = score_to_midi(score)
         score2 = midi_to_score(midi_raw2, minimize_tempo=minimize_tempo, notes_mode=notes_mode)
         assert_scores_equal(score, score2)

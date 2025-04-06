@@ -16,4 +16,5 @@ setuptools
 
 # for the benchnmarks
 requests
+types-requests
 pandas

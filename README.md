@@ -83,6 +83,8 @@ on a laptop with an Intel i7-13800H processor clocked at 2.9 GHz.
 
 When reading from disk, we are about 7x faster than *pretty_midi* and 22x slower than *symusic*.
 
+Our library has also been bencmarked against alternatives on the [symusic page](https://github.com/Yikai-Liao/symusic). In this benchmarh is appears 15x faster than *pretty_midi* and 20x slower than *symusic*. 
+
 **Note:** We could probably get a 2x speedup with a reasonable amount of effort by moving more code to Numba JIT-compiled functions.
 
 ## Alternatives

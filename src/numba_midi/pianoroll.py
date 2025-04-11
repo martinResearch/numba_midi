@@ -67,6 +67,34 @@ class PianoRoll:
         if self.track_names is not None:
             assert len(self.track_names) == self.num_tracks, "track_names must be the same length as num_tracks"
 
+    @staticmethod
+    def from_score(
+        score: Score,
+        time_step: float,
+        pitch_min: int,
+        pitch_max: int,
+        num_bin_per_semitone: int,
+        shorten_notes: bool = True,
+        antialiasing: bool = False,
+    ) -> "PianoRoll":
+        """Create a PianoRoll from a Score."""
+        return score_to_piano_roll(
+            score=score,
+            time_step=time_step,
+            pitch_min=pitch_min,
+            pitch_max=pitch_max,
+            num_bin_per_semitone=num_bin_per_semitone,
+            shorten_notes=shorten_notes,
+            antialiasing=antialiasing,
+        )
+
+    def to_score(self, threshold: float = 0.0) -> Score:
+        """Create a Score from a PianoRoll."""
+        return piano_roll_to_score(
+            piano_roll=self,
+            threshold=threshold,
+        )
+
 
 @njit(cache=True)
 def _add_notes_to_piano_roll_jit(

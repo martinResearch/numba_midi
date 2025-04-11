@@ -2,7 +2,7 @@
 
 from copy import copy
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, TYPE_CHECKING
 
 import numpy as np
 
@@ -26,6 +26,8 @@ from numba_midi.midi import (
     save_midi_file,
 )
 
+if TYPE_CHECKING:
+    from numba_midi.pianoroll import PianoRoll
 NotesMode = Literal["no_overlap", "first_in_first_out", "note_off_stops_all"]
 
 notes_mode_mapping: dict[NotesMode, int] = {
@@ -113,13 +115,19 @@ class Score:
     notated_32nd_notes_per_beat: int = 8
     clocks_per_click: int = 24
 
-    def __repr__(self) -> str:
+    @property
+    def num_notes(self) -> int:
+        """Get the number of notes in the score."""
         num_notes = sum(len(track.notes) for track in self.tracks)
-        last_tick = max(track.last_tick() for track in self.tracks)
-        return (
-            f"Score with {len(self.tracks)} tracks, {num_notes} notes, "
-            f"last tick {last_tick} and duration {self.duration}"
-        )
+        return num_notes
+
+    @property
+    def num_tracks(self) -> int:
+        """Get the number of tracks in the score."""
+        return len(self.tracks)
+
+    def __repr__(self) -> str:
+        return f"Score(num_tracks={self.num_tracks}, num_notes={self.num_notes}, duration={self.duration:02g})"
 
     def last_tick(self) -> int:
         """Get the last tick of the score."""
@@ -132,6 +140,27 @@ class Score:
         # assert len(self.tracks) > 0, "Tracks must be a non-empty list of Track objects"
         assert self.duration > 0, "Duration must be a positive float"
         assert len(self.tempo) > 0, "Tempo must a non-empty"
+
+    def to_pianoroll(
+        self,
+        time_step: float,
+        pitch_min: int,
+        pitch_max: int,
+        num_bin_per_semitone: int,
+        shorten_notes: bool = True,
+        antialiasing: bool = False,
+    ) -> "PianoRoll":
+        from numba_midi.pianoroll import score_to_piano_roll
+
+        return score_to_piano_roll(
+            self,
+            pitch_min=pitch_min,
+            pitch_max=pitch_max,
+            time_step=time_step,
+            num_bin_per_semitone=num_bin_per_semitone,
+            shorten_notes=shorten_notes,
+            antialiasing=antialiasing,
+        )
 
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:

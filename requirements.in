@@ -14,7 +14,7 @@ symusic
 # setuptools required by pretty_midi
 setuptools 
 
-# for the benchnmarks
+# for the benchmarks
 requests
 types-requests
 pandas

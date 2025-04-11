@@ -35,6 +35,23 @@ pip install numba_midi
 
 The library includes a `PianoRoll` dataclass with conversion functions to seamlessly transform between piano rolls and MIDI scores.
 
+
+## Example
+
+example in [example.py](./tests/example.py):
+```
+from pathlib import Path
+from numba_midi import load_score
+
+midi_file = str(Path(__file__).parent / "data" / "numba_midi" / "2c6e8007babc7ee877f1d2130b6459af.mid")
+score = load_score(midi_file, notes_mode="no_overlap")
+print(score)
+# Score(num_tracks=15, num_notes=6006, duration=214.118)
+
+pianoroll = score.to_pianoroll(time_step=0.01, pitch_min=0, pitch_max=127, num_bin_per_semitone=1)
+print(pianoroll)
+```
+
 ## Interoperability
 
 We provide functions to convert from/to score from the **symusic** and **pretty_midi** libraries in 

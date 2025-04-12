@@ -73,7 +73,7 @@ def draw_rectangles(
     fill_colors: np.ndarray | tuple[int, int, int],
     alpha: np.ndarray | float,
     thickness: np.ndarray | int,
-    edge_colors: np.ndarray | tuple[int, int, int],
+    edge_colors: np.ndarray | tuple[int, int, int] | None,
 ) -> np.ndarray:
     """Draw rectangles on an image."""
     num_rectangles = rectangles.shape[0]
@@ -83,6 +83,8 @@ def draw_rectangles(
         thickness = np.full(num_rectangles, thickness, dtype=np.int32)
     if isinstance(fill_colors, tuple):
         fill_colors = np.array(fill_colors, dtype=np.uint8)
+    if edge_colors is None:
+        edge_colors = np.zeros_like(fill_colors, dtype=np.uint8)
     if isinstance(edge_colors, tuple):
         edge_colors = np.array(edge_colors, dtype=np.uint8)
     if fill_colors.ndim == 1:

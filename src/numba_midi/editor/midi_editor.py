@@ -5,6 +5,7 @@ This module provides a graphical user interface (GUI) for editing MIDI files usi
 
 import copy
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 import tkinter as tk
 from tkinter import colorchooser, filedialog
@@ -146,6 +147,10 @@ class MidiEditor(tk.Tk):
         # key press events
         self.bind("<KeyPress>", self.on_key_press)
         self.bind("<KeyRelease>", self.on_key_release)
+
+        self.velocity_canvas_image: Optional[ImageTk.PhotoImage] = None
+        self.controls_canvas_image: Optional[ImageTk.PhotoImage] = None
+        self.pianoroll_canvas_image: Optional[ImageTk.PhotoImage] = None
 
     def on_key_press(self, event: tk.Event) -> None:
         """Handle key press events.
@@ -378,6 +383,8 @@ class MidiEditor(tk.Tk):
             self.score = load_score(self.midi_file, notes_mode="no_overlap")
         assert self.score is not None, "Failed to load MIDI file."
         self.editor_state.selected_tracks = set()
+        self.track_color_boxes: dict[int, tk.Frame] = {}
+        self.track_toggle_buttons: dict[int, tk.Button] = {}
         for i, track in enumerate(self.score.tracks):
             if not track.name:
                 track_name = f"Track {i}"
@@ -396,18 +403,21 @@ class MidiEditor(tk.Tk):
                 width=20,
                 height=20,
             )
+            self.track_color_boxes[i] = track_color_box
             # add color picker to the track color box
-            track_color_box.bind("<Button-1>", lambda event, i=i: self.change_track_color(i))
+
+            track_color_box.bind("<Button-1>", partial(self.change_track_color, i))
 
             track_toggle = tk.Button(
                 self.tracks_list,
                 text=name,
-                command=lambda i=i: self.toggle_track(i),
+                command=partial(self.toggle_track, i),
                 bg="white",
                 fg="black",
                 font=("TkDefaultFont", 8),
                 height=1,
             )
+            self.track_toggle_buttons[i] = track_toggle
             # add the toggle button and color box to the track list
             track_color_box.grid(row=i, column=0, padx=5, pady=5, sticky=tk.W)
             track_toggle.grid(row=i, column=1, padx=5, pady=5, sticky=tk.W + tk.E)
@@ -429,11 +439,11 @@ class MidiEditor(tk.Tk):
         color = colorchooser.askcolor()[1]
         if color:
             # set the color of the track
-            track_color = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
+            track_color = (int(color[1:2], 16), int(color[3:5], 16), int(color[5:7], 16))
             # update the track color in the GUI
             self.editor_state.track_colors[track_id] = track_color
             track_color_str = f"#{track_color[0]:02x}{track_color[1]:02x}{track_color[2]:02x}"
-            self.tracks_list.grid_slaves(row=track_id, column=0)[0].config(bg=track_color_str)
+            self.track_color_boxes[track_id].config(bg=track_color_str)
 
         self.refresh()
 
@@ -453,12 +463,12 @@ class MidiEditor(tk.Tk):
         if track_id in self.editor_state.selected_tracks:
             self.editor_state.selected_tracks.remove(track_id)
             # make the text in the button light grey
-            self.tracks_list.grid_slaves(row=track_id, column=1)[0].config(fg="grey")
+            self.track_toggle_buttons[track_id].config(fg="grey")
 
         else:
             self.editor_state.selected_tracks.add(track_id)
             # make the text in the button black
-            self.tracks_list.grid_slaves(row=track_id, column=1)[0].config(fg="black")
+            self.track_toggle_buttons[track_id].config(fg="black")
 
         # redraw the pianoroll
         self.refresh()
@@ -506,7 +516,7 @@ class MidiEditor(tk.Tk):
         self.velocity_canvas.delete("all")
         img = ImageTk.PhotoImage(image=Image.fromarray(image))
         self.velocity_canvas.create_image(0, 0, anchor=tk.NW, image=img)
-        self.velocity_canvas.image = img  # keep a reference to the image
+        self.velocity_canvas_image = img  # keep a reference to the image
 
     def draw_controls(self) -> None:
         """Draw the controls for the loaded MIDI score.
@@ -538,10 +548,10 @@ class MidiEditor(tk.Tk):
             y = 5 + (1 - value / 128) * (self.controls_canvas.winfo_height() - 10)
             draw_starcaise(image, x=x, y=y, color=track_color)
         # put the image on the canvas
-        self.controls_canvas.delete("all")
+
         img = ImageTk.PhotoImage(image=Image.fromarray(image))
         self.controls_canvas.create_image(0, 0, anchor=tk.NW, image=img)
-        self.controls_canvas.image = img  # keep a reference to the image
+        self.controls_canvas_image = img  # keep a reference to the image
 
     def draw_pianoroll(self) -> None:
         """Draw the pianoroll of the loaded MIDI score.
@@ -678,7 +688,7 @@ class MidiEditor(tk.Tk):
         self.pianoroll_canvas.delete("all")
         img = ImageTk.PhotoImage(image=Image.fromarray(image))
         self.pianoroll_canvas.create_image(0, 0, anchor=tk.NW, image=img)
-        self.pianoroll_canvas.image = img  # keep a reference to the image
+        self.pianoroll_canvas_image = img  # keep a reference to the image
 
         # refresh the canvas
         # self.canvas.update_idletasks()

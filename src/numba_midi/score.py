@@ -2,6 +2,7 @@
 
 from copy import copy
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, Optional, TYPE_CHECKING
 
 import numpy as np
@@ -60,7 +61,6 @@ class Track:
     """MIDI track representation."""
 
     program: int
-
     is_drum: bool
     name: str
     notes: np.ndarray  # 1D structured numpy array with note_dtype elements
@@ -161,6 +161,24 @@ class Score:
             shorten_notes=shorten_notes,
             antialiasing=antialiasing,
         )
+
+    def get_beat_positions(self) -> np.ndarray:
+        """Get the beat positions in seconds."""
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
+        # Compute the beat positions in seconds using the tempo
+        beat_ticks = np.arange(0, self.last_tick(), ticks_per_beat)
+        beat_time = ticks_to_times(beat_ticks, self.tempo, self.ticks_per_quarter)
+        return beat_time
+
+    def get_bar_positions(self) -> np.ndarray:
+        """Get the bar positions in seconds."""
+        # get the bar position taking the time_signature into account
+        tick_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
+        beat_per_bar = self.time_signature[0]
+        ticks_per_bar = tick_per_beat * beat_per_bar
+        bar_ticks = np.arange(0, self.last_tick(), ticks_per_bar)
+        bar_time = ticks_to_times(bar_ticks, self.tempo, self.ticks_per_quarter)
+        return bar_time
 
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
@@ -562,7 +580,7 @@ def score_to_midi(score: Score) -> Midi:
 
 
 def load_score(
-    file_path: str,
+    file_path: str | Path,
     notes_mode: NotesMode = "note_off_stops_all",
     minimize_tempo: bool = True,
     check_round_trip: bool = False,
@@ -798,6 +816,19 @@ def time_to_tick(time: float, tempo: np.ndarray, ticks_per_quarter: int) -> int:
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return int(ref_ticks + (time - ref_time) * ticks_per_second)
+
+
+def ticks_to_times(tick: np.ndarray, tempo: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
+    """Convert a tick to time in seconds."""
+    # get the tempo at the start of the time range
+    tempo_idx = np.searchsorted(tempo["tick"], tick, side="right") - 1
+    tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
+    bpm = tempo["bpm"][tempo_idx]
+    ref_ticks = tempo["tick"][tempo_idx]
+    ref_time = tempo["time"][tempo_idx]
+    quarter_per_second = bpm / 60.0
+    ticks_per_second = ticks_per_quarter * quarter_per_second
+    return ref_time + (tick - ref_ticks) / ticks_per_second
 
 
 def times_to_ticks(time: np.ndarray, tempo: np.ndarray, ticks_per_quarter: int) -> np.ndarray:

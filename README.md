@@ -4,7 +4,7 @@
 
 A Numba-accelerated Python library for fast MIDI file reading and music score processing.
 
-This library is implemented entirely in Python, making it portable and easy to modify and extend for Python developers. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note Python class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations.
+This library is implemented entirely in Python, making it portable and easy to modify and extend for Python developers. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note Python class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations. The set of depenency is minimal and limited to `numpy` and `numba`.
 
 ## Main features
 

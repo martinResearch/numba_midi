@@ -14,8 +14,12 @@ def test_pretty_midi_conversion() -> None:
     midi_files = glob.glob(str(Path(__file__).parent.parent / "data" / "pretty_midi" / "*.mid"))
     for midi_file in midi_files:
         print(f"Testing PrettyMIDI conversion with {midi_file}")
-        # load the score uing numba_midi
+        # load the score using numba_midi
         score1 = load_score(midi_file, notes_mode="note_off_stops_all", minimize_tempo=True)
+
+        # Remove the empty tracks from the score because
+        # pretty_midi loader removes the empty tracks
+        score1 = score1.without_empty_tracks()
 
         # Load the MIDI file
         midi = pretty_midi.PrettyMIDI(midi_file)

@@ -17,6 +17,10 @@ def test_symusic_conversion() -> None:
         # load the score uing numba_midi
         score1 = load_score(midi_file, notes_mode="first_in_first_out", minimize_tempo=False)
 
+        # Remove the empty tracks from the score because
+        # symusic loader removes the empty tracks
+        score1 = score1.without_empty_tracks()
+
         # Load the MIDI file
         symusic_score = symusic.Score.from_file(midi_file)
 

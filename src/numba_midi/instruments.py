@@ -267,7 +267,7 @@ class Instrument(Enum):
     Gunshot = 127
 
 
-instrument_to_program = {instrument: program + 1 for program, instrument in enumerate(all_instruments)}
+instrument_to_program = {instrument: program for program, instrument in enumerate(all_instruments)}
 
 
 midi_instruments_groups = {

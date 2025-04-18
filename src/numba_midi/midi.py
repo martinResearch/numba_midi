@@ -68,6 +68,30 @@ class Midi:
         assert isinstance(self.ticks_per_quarter, int), "ticks_per_quarter must be an integer"
         assert self.ticks_per_quarter > 0, "ticks_per_quarter must be positive"
 
+    def __repr__(self) -> str:
+        num_events = sum(len(track.events) for track in self.tracks)
+        return f"Midi(num_tracks={len(self.tracks)}, num_events={num_events})"
+
+    @classmethod
+    def from_file(cls, file_path: str) -> "Midi":
+        """Load a MIDI file."""
+        with open(file_path, "rb") as file:
+            data = file.read()
+        return cls.from_bytes(data)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "Midi":
+        return load_midi_bytes(data)
+
+    def to_bytes(self) -> bytes:
+        """Convert the MIDI object to bytes."""
+        return save_midi_data(self)
+
+    def save(self, file_path: str) -> None:
+        """Save the MIDI object to a file."""
+        with open(file_path, "wb") as file:
+            file.write(self.to_bytes())
+
 
 @njit(cache=True, boundscheck=False)
 def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:

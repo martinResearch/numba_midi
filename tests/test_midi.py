@@ -78,7 +78,6 @@ def test_score_to_midi_midi_to_score_round_trip(compare_to_symusic: bool = False
     midi_files = sorted(midi_files)
     for midi_file in tqdm.tqdm(midi_files):
         midi_raw = load_midi_score(midi_file)
-
         score = midi_to_score(midi_raw)
         midi_raw2 = score_to_midi(score)
         score2 = midi_to_score(midi_raw2)

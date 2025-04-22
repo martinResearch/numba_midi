@@ -156,3 +156,30 @@ def _get_overlapping_notes_pairs_jit(
     else:
         result = np.array(overlapping_notes, dtype=np.int64)
     return result
+
+
+@njit(cache=True, boundscheck=False)
+def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
+    """Get the time of each event in ticks and seconds."""
+    tick = np.uint32(0)
+    time = 0.0
+    second_per_tick = 0.0
+
+    ref_tick = 0
+    ref_time = 0.0
+    last_tempo_event = -1
+
+    for i in range(len(tempo)):
+        delta_tick = tempo[i]["tick"] - tick
+        tick += delta_tick
+        while last_tempo_event + 1 < len(tempo) and tick >= tempo[last_tempo_event + 1]["tick"]:
+            # tempo change event
+            last_tempo_event += 1
+            tempo_event = tempo[last_tempo_event]
+            ref_time = ref_time + (tempo_event["tick"] - ref_tick) * second_per_tick
+            ref_tick = tempo_event["tick"]
+            bpm = tempo_event["bpm"]
+            second_per_tick = 60.0 / (bpm * ticks_per_quarter)  # seconds per tick
+
+        time = ref_time + (tick - ref_tick) * second_per_tick
+        tempo[i]["time"] = time

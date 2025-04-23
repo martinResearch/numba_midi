@@ -1710,7 +1710,7 @@ def crop_score(score: Score, start: float, end: float) -> Score:
     """
     tracks = []
     duration = end - start
-    previous_tempos = TempoArray.from_array(np.nonzero(score.tempo.time < start)[0])
+    previous_tempos = np.nonzero(score.tempo.time < start)[0]
     tempo_keep = (score.tempo.time < end) & (score.tempo.time >= start)
     if len(previous_tempos) > 0:
         tempo_keep[previous_tempos[-1]] = True

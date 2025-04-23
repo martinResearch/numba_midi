@@ -4,15 +4,11 @@ import numpy as np
 import pretty_midi
 
 from numba_midi.score import (
-    control_dtype,
     ControlArray,
     get_pedals_from_controls,
-    note_dtype,
     NoteArray,
-    pitch_bend_dtype,
     PitchBendArray,
     Score,
-    tempo_dtype,
     TempoArray,
     Track,
 )
@@ -22,7 +18,7 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     """Convert a PrettyMIDI object to a Score object."""
     tracks = []
     for _, instrument in enumerate(midi.instruments):
-        notes = NoteArray(np.empty(len(instrument.notes), dtype=note_dtype))
+        notes = NoteArray.zeros(len(instrument.notes))
         for note_id, note in enumerate(instrument.notes):
             notes.start[note_id] = note.start
             start_tick = midi.time_to_tick(note.start)
@@ -33,13 +29,13 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
             notes.pitch[note_id] = note.pitch
             notes.velocity[note_id] = note.velocity
 
-        pitch_bends = PitchBendArray(np.empty(len(instrument.pitch_bends), dtype=pitch_bend_dtype))
+        pitch_bends = PitchBendArray.zeros(len(instrument.pitch_bends))
         for pitch_bend_id, pitch_bend in enumerate(instrument.pitch_bends):
             pitch_bends.time[pitch_bend_id] = pitch_bend.time
             pitch_bends.value[pitch_bend_id] = pitch_bend.pitch
             pitch_bends.tick[pitch_bend_id] = midi.time_to_tick(pitch_bend.time)
 
-        controls = ControlArray(np.empty(len(instrument.control_changes), dtype=control_dtype))
+        controls = ControlArray.zeros(len(instrument.control_changes))
         for control_id, control in enumerate(instrument.control_changes):
             controls.time[control_id] = control.time
             controls.value[control_id] = control.value
@@ -70,7 +66,7 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
         denominator = 4
     ticks_per_quarter = midi.resolution
     tempo_change_times, tempi = midi.get_tempo_changes()
-    tempo = TempoArray(np.empty(len(tempo_change_times), dtype=tempo_dtype))
+    tempo = TempoArray.zeros(len(tempo_change_times))
 
     clocks_per_click = 0  # Looks like we don't have this information in pretty_midi
     notated_32nd_notes_per_beat = 0  # Looks like we don't have this information in pretty_midi

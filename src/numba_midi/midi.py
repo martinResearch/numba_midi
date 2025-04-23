@@ -19,7 +19,7 @@ event_dtype = np.dtype(
 
 
 class EventArray:
-    """Wrapper for a structured numpy array with control_dtype elements."""
+    """Wrapper for a structured numpy array with event_dtype elements."""
 
     def __init__(self, data: np.ndarray) -> None:
         if data.dtype != event_dtype:
@@ -30,6 +30,14 @@ class EventArray:
     def zeros(cls, size: int) -> "EventArray":
         """Create a new EventArray with zeros."""
         data = np.zeros(size, dtype=event_dtype)
+        return cls(data)
+
+    @classmethod
+    def concatenate(cls, arrays: list["EventArray"]) -> "EventArray":
+        """Concatenate multiple EventArrays."""
+        if not arrays:
+            raise ValueError("No EventArrays to concatenate")
+        data = np.concatenate([arr._data for arr in arrays])
         return cls(data)
 
     @property

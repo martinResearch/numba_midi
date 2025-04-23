@@ -73,23 +73,57 @@ class Note:
 class NoteArray:
     """Wrapper for a structured numpy array with note_dtype elements."""
 
-    def __init__(self, data: np.ndarray) -> None:
+    def __init__(
+        self,
+        start: np.ndarray | list[float],
+        start_tick: np.ndarray | list[int],
+        duration: np.ndarray | list[float],
+        duration_tick: np.ndarray | list[int],
+        pitch: np.ndarray | list[int],
+        velocity: np.ndarray | list[int],
+    ) -> None:
+        if isinstance(start, list):
+            start = np.array(start, dtype=np.float64)
+        if isinstance(start_tick, list):
+            start_tick = np.array(start_tick, dtype=np.int32)
+        if isinstance(duration, list):
+            duration = np.array(duration, dtype=np.float64)
+        if isinstance(duration_tick, list):
+            duration_tick = np.array(duration_tick, dtype=np.int32)
+        if isinstance(pitch, list):
+            pitch = np.array(pitch, dtype=np.int32)
+        if isinstance(velocity, list):
+            velocity = np.array(velocity, dtype=np.uint8)
+
+        data = np.empty(len(start), dtype=note_dtype)
+        data["start"] = start
+        data["start_tick"] = start_tick
+        data["duration"] = duration
+        data["duration_tick"] = duration_tick
+        data["pitch"] = pitch
+        data["velocity"] = velocity
+        self._data = data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "NoteArray":
         if data.dtype != note_dtype:
             raise ValueError("Invalid dtype for NoteArray")
         if data.ndim != 1:
             raise ValueError("NoteArray must be 1D")
-        self._data = data
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._data = data
+        return instance
 
     @classmethod
     def zeros(cls, size: int) -> "NoteArray":
         """Initialize the NoteArray with zeros."""
-        return NoteArray(np.zeros(size, dtype=note_dtype))
+        return NoteArray.from_array(np.zeros(size, dtype=note_dtype))
 
     @classmethod
     def concatenate(cls, arrays: Iterable["NoteArray"]) -> "NoteArray":
         """Concatenate multiple NoteArrays."""
         data = np.concatenate([arr._data for arr in arrays])
-        return cls(data)
+        return cls.from_array(data)
 
     @property
     def start(self) -> np.ndarray:
@@ -141,7 +175,7 @@ class NoteArray:
 
     def __getitem__(self, index: int | slice | np.ndarray) -> "NoteArray":
         result = self._data[index]
-        return NoteArray(result)  # Return new wrapper for slices or boolean arrays
+        return NoteArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "NoteArray") -> None:
         self._data[index] = value._data
@@ -187,23 +221,48 @@ class Control:
 class ControlArray:
     """Wrapper for a structured numpy array with control_dtype elements."""
 
-    def __init__(self, data: np.ndarray) -> None:
+    def __init__(
+        self,
+        time: np.ndarray | list[float],
+        tick: np.ndarray | list[int],
+        number: np.ndarray | list[int],
+        value: np.ndarray | list[int],
+    ) -> None:
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+        if isinstance(tick, list):
+            tick = np.array(tick, dtype=np.int32)
+        if isinstance(number, list):
+            number = np.array(number, dtype=np.int32)
+        if isinstance(value, list):
+            value = np.array(value, dtype=np.int32)
+        data = np.empty(len(time), dtype=note_dtype)
+        data["time"] = time
+        data["tick"] = tick
+        data["number"] = number
+        data["value"] = value
+        self._data = data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "ControlArray":
         if data.dtype != control_dtype:
             raise ValueError("Invalid dtype for ControlArray")
         if data.ndim != 1:
             raise ValueError("ControlArray must be 1D")
-        self._data = data
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._data = data
+        return instance
 
     @classmethod
     def zeros(cls, size: int) -> "ControlArray":
         """Initialize the ControlArray with zeros."""
-        return ControlArray(np.zeros(size, dtype=control_dtype))
+        return ControlArray.from_array(np.zeros(size, dtype=control_dtype))
 
     @classmethod
     def concatenate(cls, arrays: Iterable["ControlArray"]) -> "ControlArray":
         """Concatenate multiple NoteArrays."""
         data = np.concatenate([arr._data for arr in arrays])
-        return cls(data)
+        return cls.from_array(data)
 
     @property
     def time(self) -> np.ndarray:
@@ -239,7 +298,7 @@ class ControlArray:
 
     def __getitem__(self, index: int | slice | np.ndarray) -> "ControlArray":
         result = self._data[index]
-        return ControlArray(result)  # Return new wrapper for slices or boolean arrays
+        return ControlArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "ControlArray") -> None:
         self._data[index] = value._data
@@ -283,23 +342,44 @@ class Pedal:
 class PedalArray:
     """Wrapper for a structured numpy array with pedal_dtype elements."""
 
-    def __init__(self, data: np.ndarray) -> None:
-        if data.dtype != pedal_dtype:
-            raise ValueError("Invalid dtype for PedalArray")
-        if data.ndim != 1:
-            raise ValueError("PedalArray must be 1D")
+    def __init__(
+        self,
+        time: np.ndarray | list[float],
+        tick: np.ndarray | list[int],
+        duration: np.ndarray | list[float],
+    ) -> None:
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+        if isinstance(tick, list):
+            tick = np.array(tick, dtype=np.int32)
+        if isinstance(duration, list):
+            duration = np.array(duration, dtype=np.float64)
+        data = np.empty(len(time), dtype=note_dtype)
+        data["time"] = time
+        data["tick"] = tick
+        data["duration"] = duration
         self._data = data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "PedalArray":
+        if data.dtype != pedal_dtype:
+            raise ValueError("Invalid dtype for ControlArray")
+        if data.ndim != 1:
+            raise ValueError("ControlArray must be 1D")
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._data = data
+        return instance
 
     @classmethod
     def zeros(cls, size: int) -> "PedalArray":
         """Initialize the PedalArray with zeros."""
-        return PedalArray(np.zeros(size, dtype=pedal_dtype))
+        return PedalArray.from_array(np.zeros(size, dtype=pedal_dtype))
 
     @classmethod
     def concatenate(cls, arrays: Iterable["PedalArray"]) -> "PedalArray":
         """Concatenate multiple PedalArrays."""
         data = np.concatenate([arr._data for arr in arrays])
-        return cls(data)
+        return cls.from_array(data)
 
     @property
     def time(self) -> np.ndarray:
@@ -335,7 +415,7 @@ class PedalArray:
 
     def __getitem__(self, index: int | slice | np.ndarray) -> "PedalArray":
         result = self._data[index]
-        return PedalArray(result)  # Return new wrapper for slices or boolean arrays
+        return PedalArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "PedalArray") -> None:
         self._data[index] = value._data
@@ -377,23 +457,44 @@ class PitchBend:
 class PitchBendArray:
     """Wrapper for a structured numpy array with pitch_bend_dtype elements."""
 
-    def __init__(self, data: np.ndarray) -> None:
-        if data.dtype != pitch_bend_dtype:
-            raise ValueError("Invalid dtype for PitchBendArray")
-        if data.ndim != 1:
-            raise ValueError("PitchBendArray must be 1D")
+    def __init__(
+        self,
+        time: np.ndarray | list[float],
+        tick: np.ndarray | list[int],
+        value: np.ndarray | list[int],
+    ) -> None:
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+        if isinstance(tick, list):
+            tick = np.array(tick, dtype=np.int32)
+        if isinstance(value, list):
+            value = np.array(value, dtype=np.int32)
+        data = np.empty(len(time), dtype=note_dtype)
+        data["time"] = time
+        data["tick"] = tick
+        data["value"] = value
         self._data = data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "PitchBendArray":
+        if data.dtype != pitch_bend_dtype:
+            raise ValueError("Invalid dtype for ControlArray")
+        if data.ndim != 1:
+            raise ValueError("ControlArray must be 1D")
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._data = data
+        return instance
 
     @classmethod
     def zeros(cls, size: int) -> "PitchBendArray":
         """Initialize the PitchBendArray with zeros."""
-        return PitchBendArray(np.zeros(size, dtype=pitch_bend_dtype))
+        return PitchBendArray.from_array(np.zeros(size, dtype=pitch_bend_dtype))
 
     @classmethod
     def concatenate(cls, arrays: Iterable["PitchBendArray"]) -> "PitchBendArray":
         """Concatenate multiple PitchBendArrays."""
         data = np.concatenate([arr._data for arr in arrays])
-        return cls(data)
+        return cls.from_array(data)
 
     @property
     def time(self) -> np.ndarray:
@@ -421,7 +522,7 @@ class PitchBendArray:
 
     def __getitem__(self, index: int | slice | np.ndarray) -> "PitchBendArray":
         result = self._data[index]
-        return PitchBendArray(result)  # Return new wrapper for slices or boolean arrays
+        return PitchBendArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "PitchBendArray") -> None:
         self._data[index] = value._data
@@ -465,23 +566,44 @@ class Tempo:
 class TempoArray:
     """Wrapper for a structured numpy array with tempo_dtype elements."""
 
-    def __init__(self, data: np.ndarray) -> None:
-        if data.dtype != tempo_dtype:
-            raise ValueError("Invalid dtype for TempoArray")
-        if data.ndim != 1:
-            raise ValueError("TempoArray must be 1D")
+    def __init__(
+        self,
+        time: np.ndarray | list[float],
+        tick: np.ndarray | list[int],
+        bpm: np.ndarray | list[float],
+    ) -> None:
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+        if isinstance(tick, list):
+            tick = np.array(tick, dtype=np.int32)
+        if isinstance(bpm, list):
+            bpm = np.array(bpm, dtype=np.float64)
+        data = np.empty(len(time), dtype=note_dtype)
+        data["time"] = time
+        data["tick"] = tick
+        data["bpm"] = bpm
         self._data = data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "TempoArray":
+        if data.dtype != tempo_dtype:
+            raise ValueError("Invalid dtype for ControlArray")
+        if data.ndim != 1:
+            raise ValueError("ControlArray must be 1D")
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._data = data
+        return instance
 
     @classmethod
     def zeros(cls, size: int) -> "TempoArray":
         """Initialize the TempoArray with zeros."""
-        return TempoArray(np.zeros(size, dtype=tempo_dtype))
+        return TempoArray.from_array(np.zeros(size, dtype=tempo_dtype))
 
     @classmethod
     def concatenate(cls, arrays: Iterable["TempoArray"]) -> "TempoArray":
         """Concatenate multiple TempoArrays."""
         data = np.concatenate([arr._data for arr in arrays])
-        return cls(data)
+        return cls.from_array(data)
 
     @property
     def time(self) -> np.ndarray:
@@ -509,7 +631,7 @@ class TempoArray:
 
     def __getitem__(self, index: int | slice | np.ndarray) -> "TempoArray":
         result = self._data[index]
-        return TempoArray(result)  # Return new wrapper for slices or boolean arrays
+        return TempoArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "TempoArray") -> None:
         self._data[index] = value._data
@@ -936,9 +1058,9 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             tempo_change = midi_track.events[tempo_change_mask]
             # keep only the last tempo change for each tick
             keep = np.hstack((np.diff(tempo_change.tick) > 0, [True]))
-            all_tempo_events.append(tempo_change[keep]._data)
+            all_tempo_events.append(tempo_change[keep])
     if len(all_tempo_events) > 0:
-        tempo_events = EventArray(np.concatenate(all_tempo_events, axis=0))
+        tempo_events = EventArray.concatenate(all_tempo_events)
         # sort by tick
         tempo_events = tempo_events[np.argsort(tempo_events.tick)]
         # keep only the last tempo change for each tick
@@ -1588,7 +1710,7 @@ def crop_score(score: Score, start: float, end: float) -> Score:
     """
     tracks = []
     duration = end - start
-    previous_tempos = TempoArray(np.nonzero(score.tempo.time < start)[0])
+    previous_tempos = TempoArray.from_array(np.nonzero(score.tempo.time < start)[0])
     tempo_keep = (score.tempo.time < end) & (score.tempo.time >= start)
     if len(previous_tempos) > 0:
         tempo_keep[previous_tempos[-1]] = True
@@ -1604,8 +1726,6 @@ def crop_score(score: Score, start: float, end: float) -> Score:
         notes_end_tick = notes.start_tick + notes.duration_tick
         notes_keep = (notes.start < end) & (notes_end > start)
         new_notes = notes[notes_keep]
-        # if len(new_notes) == 0:
-        #     continue
         new_notes.start = np.maximum(new_notes.start - start, 0)
         new_notes_end = np.minimum(notes_end[notes_keep] - start, end - start)
         new_notes.duration = new_notes_end - new_notes.start

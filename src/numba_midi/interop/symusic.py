@@ -4,16 +4,11 @@ import numpy as np
 import symusic
 
 from numba_midi.score import (
-    control_dtype,
     ControlArray,
-    note_dtype,
     NoteArray,
-    pedal_dtype,
     PedalArray,
-    pitch_bend_dtype,
     PitchBendArray,
     Score,
-    tempo_dtype,
     TempoArray,
     Track,
 )
@@ -26,7 +21,7 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
     score_seconds = symusic_score.to(symusic.TimeUnit.second)
 
     for _, (track_ticks, track_secs) in enumerate(zip(score_ticks.tracks, score_seconds.tracks)):
-        notes = NoteArray(np.empty(len(track_ticks.notes), dtype=note_dtype))
+        notes = NoteArray.zeros(len(track_ticks.notes))
         track_ticks_notes_numpy = track_ticks.notes.numpy()
         track_secs_notes_numpy = track_secs.notes.numpy()
         notes.start = track_secs_notes_numpy["time"]
@@ -36,7 +31,7 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
         notes.pitch = track_secs_notes_numpy["pitch"]
         notes.velocity = track_secs_notes_numpy["velocity"]
 
-        controls = ControlArray(np.empty(len(track_ticks.controls), dtype=control_dtype))
+        controls = ControlArray.zeros(len(track_ticks.controls))
 
         control_tick_numpy = track_ticks.controls.numpy()
         control_secs_numpy = track_secs.controls.numpy()
@@ -45,14 +40,14 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
         controls.tick = control_tick_numpy["time"]
         controls.number = control_tick_numpy["number"]
 
-        pitch_bends = PitchBendArray(np.empty(len(track_ticks.pitch_bends), dtype=pitch_bend_dtype))
+        pitch_bends = PitchBendArray.zeros(len(track_ticks.pitch_bends))
         pitch_bends_tick_numpy = track_ticks.pitch_bends.numpy()
         pitch_bends_secs_numpy = track_secs.pitch_bends.numpy()
         pitch_bends.time = pitch_bends_secs_numpy["time"]
         pitch_bends.value = pitch_bends_secs_numpy["value"]
         pitch_bends.tick = pitch_bends_tick_numpy["time"]
 
-        pedals = PedalArray(np.empty(len(track_ticks.pedals), dtype=pedal_dtype))
+        pedals = PedalArray.zeros(len(track_ticks.pedals))
         pedal_tick_numpy = track_ticks.pedals.numpy()
         pedal_secs_numpy = track_secs.pedals.numpy()
         pedals.time = pedal_secs_numpy["time"]
@@ -84,7 +79,7 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
 
     tempos_sec_numpy = score_seconds.tempos.numpy()
     tempo_tick_numpy = score_ticks.tempos.numpy()
-    tempo = TempoArray(np.empty(len(score_seconds.tempos), dtype=tempo_dtype))
+    tempo = TempoArray.zeros(len(score_seconds.tempos))
     tempo.time = tempos_sec_numpy["time"]
     tempo.bpm = 60000000 / tempo_tick_numpy["mspq"]
     tempo.tick = tempo_tick_numpy["time"]

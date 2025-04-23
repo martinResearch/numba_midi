@@ -17,6 +17,73 @@ event_dtype = np.dtype(
     ]
 )
 
+
+class EventArray:
+    """Wrapper for a structured numpy array with control_dtype elements."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        if data.dtype != event_dtype:
+            raise ValueError("Invalid dtype for ControlArray")
+        self._data = data
+
+    @property
+    def tick(self) -> np.ndarray:
+        return self._data["tick"]
+
+    @tick.setter
+    def tick(self, value: np.ndarray | int) -> None:
+        self._data["tick"][:] = value
+
+    @property
+    def event_type(self) -> np.ndarray:
+        return self._data["event_type"]
+
+    @event_type.setter
+    def event_type(self, value: np.ndarray | int) -> None:
+        self._data["event_type"][:] = value
+
+    @property
+    def channel(self) -> np.ndarray:
+        return self._data["channel"]
+
+    @channel.setter
+    def channel(self, value: np.ndarray | int) -> None:
+        self._data["channel"][:] = value
+
+    @property
+    def value1(self) -> np.ndarray:
+        return self._data["value1"]
+
+    @value1.setter
+    def value1(self, value: np.ndarray | int) -> None:
+        self._data["value1"][:] = value
+
+    @property
+    def value2(self) -> np.ndarray:
+        return self._data["value2"]
+
+    @value2.setter
+    def value2(self, value: np.ndarray | int) -> None:
+        self._data["value2"][:] = value
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray":
+        result = self._data[index]
+        return EventArray(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "EventArray") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+
 # event types:
 # 0: Note On
 # 1: Note Off
@@ -34,14 +101,14 @@ class MidiTrack:
     """MIDI track representation."""
 
     name: str
-    events: np.ndarray  # 1D structured numpy array with event_dtype elements
+    events: EventArray  # 1D structured numpy array with event_dtype elements
     lyrics: list[tuple[int, str]] | None  # List of tuples (tick, lyric)
     time_signature: tuple[int, int]
     clocks_per_click: int
     notated_32nd_notes_per_beat: int
 
     def __post_init__(self) -> None:
-        assert self.events.dtype == event_dtype, "Events must be a structured numpy array with event_dtype elements"
+        assert isinstance(self.events, EventArray), "Events must be a EventArray"
         assert isinstance(self.name, str), "Track name must be a string"
         assert isinstance(self.time_signature[0], int), "Numerator must be an integer"
         assert self.time_signature[0] > 0, "Numerator must be positive"
@@ -51,7 +118,6 @@ class MidiTrack:
         # assert self.clocks_per_click > 0, "Clocks per click must be positive"
         assert isinstance(self.notated_32nd_notes_per_beat, int), "Notated 32nd notes per beat must be an integer"
         assert self.notated_32nd_notes_per_beat > 0, "Notated 32nd notes per beat must be positive"
-        assert self.events.ndim == 1, "Events must be a 1D array"
 
 
 @dataclass
@@ -348,7 +414,7 @@ def load_midi_bytes(data: bytes) -> Midi:
         track = MidiTrack(
             name=name,
             lyrics=lyrics,
-            events=midi_events_np,
+            events=EventArray(midi_events_np),
             time_signature=(numerator, denominator),
             clocks_per_click=clocks_per_click,
             notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
@@ -359,9 +425,9 @@ def load_midi_bytes(data: bytes) -> Midi:
     return Midi(tracks=tracks, ticks_per_quarter=ticks_per_quarter)
 
 
-def sort_midi_events(midi_events: np.ndarray) -> np.ndarray:
+def sort_midi_events(midi_events: EventArray) -> EventArray:
     """Sorts MIDI events."""
-    order = np.lexsort((midi_events["channel"], midi_events["event_type"], midi_events["tick"]))
+    order = np.lexsort((midi_events.channel, midi_events.event_type, midi_events.tick))
     sorted_events = midi_events[order]
     return sorted_events
 
@@ -388,7 +454,7 @@ def _encode_midi_track(track: MidiTrack) -> bytes:
         track.time_signature[1],
         track.clocks_per_click,
         track.notated_32nd_notes_per_beat,
-        track.events,
+        track.events._data,
     )
     return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
 
@@ -484,4 +550,4 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
         assert track1.time_signature == track2.time_signature
         assert track1.clocks_per_click == track2.clocks_per_click
         assert track1.notated_32nd_notes_per_beat == track2.notated_32nd_notes_per_beat
-        assert np.all(sorted_events1 == sorted_events2)
+        assert np.all(sorted_events1._data == sorted_events2._data)

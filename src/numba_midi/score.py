@@ -3,7 +3,7 @@
 from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Optional, TYPE_CHECKING
+from typing import Any, Generator, Literal, Optional, TYPE_CHECKING
 
 import numpy as np
 
@@ -19,14 +19,7 @@ from numba_midi.instruments import (
     program_to_instrument,
     program_to_instrument_group,
 )
-from numba_midi.midi import (
-    event_dtype,
-    get_event_times,
-    load_midi_bytes,
-    Midi,
-    MidiTrack,
-    save_midi_file,
-)
+from numba_midi.midi import event_dtype, EventArray, get_event_times, load_midi_bytes, Midi, MidiTrack, save_midi_file
 
 if TYPE_CHECKING:
     from numba_midi.pianoroll import PianoRoll
@@ -45,7 +38,7 @@ note_dtype = np.dtype(
         ("duration", np.float64),
         ("duration_tick", np.int32),
         ("pitch", np.int32),
-        ("velocity_on", np.uint8),
+        ("velocity", np.uint8),
     ]
 )
 
@@ -58,26 +51,440 @@ tempo_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("bpm", np.flo
 
 
 @dataclass
+class Note:
+    """MIDI note representation."""
+
+    start: float
+    start_tick: int
+    duration: float
+    duration_tick: int
+    pitch: int
+    velocity: int
+
+    def __post_init__(self) -> None:
+        assert self.start >= 0, "Start time must be non-negative"
+        assert self.start_tick >= 0, "Start tick must be non-negative"
+        assert self.duration > 0, "Duration must be positive"
+        assert self.duration_tick > 0, "Duration tick must be positive"
+        assert 0 <= self.pitch < 128, "Pitch must be between 0 and 127"
+        assert 0 <= self.velocity <= 127, "Velocity must be between 0 and 127"
+
+
+class NoteArray:
+    """Wrapper for a structured numpy array with note_dtype elements."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        if data.dtype != note_dtype:
+            raise ValueError("Invalid dtype for NoteArray")
+        self._data = data
+
+    @property
+    def start(self) -> np.ndarray:
+        return self._data["start"]
+
+    @start.setter
+    def start(self, value: np.ndarray) -> None:
+        self._data["start"][:] = value
+
+    @property
+    def start_tick(self) -> np.ndarray:
+        return self._data["start_tick"]
+
+    @start_tick.setter
+    def start_tick(self, value: np.ndarray) -> None:
+        self._data["start_tick"][:] = value
+
+    @property
+    def duration(self) -> np.ndarray:
+        return self._data["duration"]
+
+    @duration.setter
+    def duration(self, value: np.ndarray) -> None:
+        self._data["duration"][:] = value
+
+    @property
+    def duration_tick(self) -> np.ndarray:
+        return self._data["duration_tick"]
+
+    @duration_tick.setter
+    def duration_tick(self, value: np.ndarray) -> None:
+        self._data["duration_tick"][:] = value
+
+    @property
+    def velocity(self) -> np.ndarray:
+        return self._data["velocity"]
+
+    @velocity.setter
+    def velocity(self, value: np.ndarray) -> None:
+        self._data["velocity"][:] = value
+
+    @property
+    def pitch(self) -> np.ndarray:
+        return self._data["pitch"]
+
+    @pitch.setter
+    def pitch(self, value: np.ndarray) -> None:
+        self._data["pitch"][:] = value
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "NoteArray":
+        result = self._data[index]
+        return NoteArray(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "NoteArray") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+    def __iter__(self) -> Generator[Note, None, None]:
+        for i in range(len(self._data)):
+            yield Note(
+                self.start[i],
+                self.start_tick[i],
+                self.duration[i],
+                self.duration_tick[i],
+                self.pitch[i],
+                self.velocity[i],
+            )
+
+
+@dataclass
+class Control:
+    """MIDI control representation."""
+
+    time: float
+    tick: int
+    number: int
+    value: int
+
+    def __post_init__(self) -> None:
+        assert self.time >= 0, "Time must be non-negative"
+        assert self.tick >= 0, "Tick must be non-negative"
+        assert 0 <= self.number < 128, "Control number must be between 0 and 127"
+        assert 0 <= self.value < 128, "Control value must be between 0 and 127"
+
+
+class ControlArray:
+    """Wrapper for a structured numpy array with control_dtype elements."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        if data.dtype != control_dtype:
+            raise ValueError("Invalid dtype for ControlArray")
+        self._data = data
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._data["time"]
+
+    @time.setter
+    def time(self, value: np.ndarray) -> None:
+        self._data["time"][:] = value
+
+    @property
+    def tick(self) -> np.ndarray:
+        return self._data["tick"]
+
+    @tick.setter
+    def tick(self, value: np.ndarray) -> None:
+        self._data["tick"][:] = value
+
+    @property
+    def number(self) -> np.ndarray:
+        return self._data["number"]
+
+    @number.setter
+    def number(self, value: np.ndarray) -> None:
+        self._data["number"][:] = value
+
+    @property
+    def value(self) -> np.ndarray:
+        return self._data["value"]
+
+    @value.setter
+    def value(self, value: np.ndarray) -> None:
+        self._data["value"][:] = value
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "ControlArray":
+        result = self._data[index]
+        return ControlArray(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "ControlArray") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+    def __iter__(self) -> Generator[Control, None, None]:
+        for i in range(len(self._data)):
+            yield Control(
+                self.time[i],
+                self.tick[i],
+                self.number[i],
+                self.value[i],
+            )
+
+
+@dataclass
+class Pedal:
+    """MIDI pedal representation."""
+
+    time: float
+    tick: int
+    duration: float
+    duration_tick: int
+
+    def __post_init__(self) -> None:
+        assert self.time >= 0, "Time must be non-negative"
+        assert self.tick >= 0, "Tick must be non-negative"
+        assert self.duration > 0, "Duration must be positive"
+        assert self.duration_tick > 0, "Duration tick must be positive"
+
+
+class PedalArray:
+    """Wrapper for a structured numpy array with pedal_dtype elements."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        if data.dtype != pedal_dtype:
+            raise ValueError("Invalid dtype for PedalArray")
+        self._data = data
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._data["time"]
+
+    @time.setter
+    def time(self, value: np.ndarray) -> None:
+        self._data["time"][:] = value
+
+    @property
+    def tick(self) -> np.ndarray:
+        return self._data["tick"]
+
+    @tick.setter
+    def tick(self, value: np.ndarray) -> None:
+        self._data["tick"][:] = value
+
+    @property
+    def duration(self) -> np.ndarray:
+        return self._data["duration"]
+
+    @duration.setter
+    def duration(self, value: np.ndarray) -> None:
+        self._data["duration"][:] = value
+
+    @property
+    def duration_tick(self) -> np.ndarray:
+        return self._data["duration_tick"]
+
+    @duration_tick.setter
+    def duration_tick(self, value: np.ndarray) -> None:
+        self._data["duration_tick"][:] = value
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "PedalArray":
+        result = self._data[index]
+        return PedalArray(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "PedalArray") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+    def __iter__(self) -> Generator[Pedal, None, None]:
+        for i in range(len(self._data)):
+            yield Pedal(
+                self.time[i],
+                self.tick[i],
+                self.duration[i],
+                self.duration_tick[i],
+            )
+
+
+@dataclass
+class PitchBend:
+    """MIDI pitch bend representation."""
+
+    time: float
+    tick: int
+    value: int
+
+    def __post_init__(self) -> None:
+        assert self.time >= 0, "Time must be non-negative"
+        assert self.tick >= 0, "Tick must be non-negative"
+        assert -8192 <= self.value <= 8191, "Pitch bend value must be between -8192 and 8191"
+
+
+class PitchBendArray:
+    """Wrapper for a structured numpy array with pitch_bend_dtype elements."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        if data.dtype != pitch_bend_dtype:
+            raise ValueError("Invalid dtype for PitchBendArray")
+        self._data = data
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._data["time"]
+
+    @time.setter
+    def time(self, value: np.ndarray) -> None:
+        self._data["time"][:] = value
+
+    @property
+    def tick(self) -> np.ndarray:
+        return self._data["tick"]
+
+    @tick.setter
+    def tick(self, value: np.ndarray) -> None:
+        self._data["tick"][:] = value
+
+    @property
+    def value(self) -> np.ndarray:
+        return self._data["value"]
+
+    @value.setter
+    def value(self, value: np.ndarray) -> None:
+        self._data["value"][:] = value
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "PitchBendArray":
+        result = self._data[index]
+        return PitchBendArray(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "PitchBendArray") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+    def __iter__(self) -> Generator[PitchBend, None, None]:
+        for i in range(len(self._data)):
+            yield PitchBend(
+                self.time[i],
+                self.tick[i],
+                self.value[i],
+            )
+
+
+@dataclass
+class Tempo:
+    """MIDI tempo representation."""
+
+    time: float
+    tick: int
+    bpm: float
+
+    def __post_init__(self) -> None:
+        assert self.time >= 0, "Time must be non-negative"
+        assert self.tick >= 0, "Tick must be non-negative"
+        assert self.bpm > 0, "BPM must be positive"
+
+    def __repr__(self) -> str:
+        return f"Tempo(time={self.time}, tick={self.tick}, bpm={self.bpm})"
+
+
+class TempoArray:
+    """Wrapper for a structured numpy array with tempo_dtype elements."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        if data.dtype != tempo_dtype:
+            raise ValueError("Invalid dtype for TempoArray")
+        self._data = data
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._data["time"]
+
+    @time.setter
+    def time(self, value: np.ndarray) -> None:
+        self._data["time"][:] = value
+
+    @property
+    def tick(self) -> np.ndarray:
+        return self._data["tick"]
+
+    @tick.setter
+    def tick(self, value: np.ndarray) -> None:
+        self._data["tick"][:] = value
+
+    @property
+    def bpm(self) -> np.ndarray:
+        return self._data["bpm"]
+
+    @bpm.setter
+    def bpm(self, value: np.ndarray) -> None:
+        self._data["bpm"][:] = value
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "TempoArray":
+        result = self._data[index]
+        return TempoArray(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "TempoArray") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+    def __iter__(self) -> Generator[Tempo, None, None]:
+        for i in range(len(self._data)):
+            yield Tempo(self.time[i], self.tick[i], self.bpm[i])
+
+
+@dataclass
 class Track:
     """MIDI track representation."""
 
     program: int
     is_drum: bool
     name: str
-    notes: np.ndarray  # 1D structured numpy array with note_dtype elements
-    controls: np.ndarray  # 1D structured numpy array with control_dtype elements
-    pedals: np.ndarray  # 1D structured numpy array with pedal_dtype elements
-    pitch_bends: np.ndarray  # 1D structured numpy array with pitch_bend_dtype elements
+    notes: NoteArray  # 1D structured numpy array with note_dtype elements
+    controls: ControlArray  # 1D structured numpy array with control_dtype elements
+    pedals: PedalArray  # 1D structured numpy array with pedal_dtype elements
+    pitch_bends: PitchBendArray  # 1D structured numpy array with pitch_bend_dtype elements
     channel: Optional[int] = None
     midi_track_id: Optional[int] = None
 
     def __post_init__(self) -> None:
-        assert self.notes.dtype == note_dtype, "Notes must be a structured numpy array with note_dtype elements"
-        assert self.controls.dtype == control_dtype, (
+        # assert self.notes.dtype == note_dtype, "Notes must be a structured numpy array with note_dtype elements"
+        assert isinstance(self.controls, ControlArray), (
             "Controls must be a structured numpy array with control_dtype elements"
         )
-        assert self.pedals.dtype == pedal_dtype, "Pedals must be a structured numpy array with pedal_dtype elements"
-        assert self.pitch_bends.dtype == pitch_bend_dtype, (
+        assert isinstance(self.pedals, PedalArray), "Pedals must be a structured numpy array with pedal_dtype elements"
+        assert isinstance(self.pitch_bends, PitchBendArray), (
             "Pitch bends must be a structured numpy array with pitch_bend_dtype elements"
         )
 
@@ -85,13 +492,13 @@ class Track:
         """Get the last tick of the track."""
         last_tick = 0
         if len(self.notes) > 0:
-            last_tick = np.max(self.notes["start_tick"] + self.notes["duration_tick"])
+            last_tick = np.max(self.notes.start_tick + self.notes.duration_tick)
         if len(self.controls) > 0:
-            last_tick = max(last_tick, np.max(self.controls["tick"]))
+            last_tick = max(last_tick, np.max(self.controls.tick))
         if len(self.pedals) > 0:
-            last_tick = max(last_tick, np.max(self.pedals["tick"]))
+            last_tick = max(last_tick, np.max(self.pedals.tick))
         if len(self.pitch_bends) > 0:
-            last_tick = max(last_tick, np.max(self.pitch_bends["tick"]))
+            last_tick = max(last_tick, np.max(self.pitch_bends.tick))
 
         return last_tick
 
@@ -108,7 +515,7 @@ class Score:
 
     tracks: list[Track]
     duration: float
-    tempo: np.ndarray  # 1D structured numpy array with tempo_dtype elements
+    tempo: TempoArray  # 1D structured numpy array with tempo_dtype elements
     lyrics: list[tuple[int, str]] | None = None
 
     ticks_per_quarter: int = 480
@@ -136,7 +543,7 @@ class Score:
         return last_tick
 
     def __post_init__(self) -> None:
-        assert self.tempo.dtype == tempo_dtype, "Tempo must be a structured numpy array with tempo_dtype elements"
+        assert isinstance(self.tempo, TempoArray), "Tempo must be a structured numpy array with tempo_dtype elements"
         assert self.tracks is not None, "Tracks must be a list of Track objects"
         # assert len(self.tracks) > 0, "Tracks must be a non-empty list of Track objects"
         assert self.duration > 0, "Duration must be a positive float"
@@ -204,11 +611,11 @@ class Score:
         duration: np.ndarray,
         velocity_on: np.ndarray,
         round_tick: bool = True,
-    ) -> np.ndarray:
+    ) -> NoteArray:
         """Create notes from start, pitch and duration."""
         assert len(start) == len(pitch) == len(duration), "start, pitch and duration must have the same length"
 
-        notes = np.zeros(len(start), dtype=note_dtype)
+        notes = NoteArray(np.zeros(len(start), dtype=note_dtype))
 
         end = start + duration
         end_ticks = self.times_to_ticks(end)
@@ -218,19 +625,19 @@ class Score:
             end = self.ticks_to_times(end_ticks)
             duration = end - start
 
-        notes["start"] = start
-        notes["start_tick"] = self.times_to_ticks(start)
-        notes["duration"] = duration
-        notes["duration_tick"] = duration_ticks
-        notes["pitch"] = pitch
-        notes["velocity_on"] = velocity_on
+        notes.start = start
+        notes.start_tick = self.times_to_ticks(start)
+        notes.duration = duration
+        notes.duration_tick = duration_ticks
+        notes.pitch = pitch
+        notes.velocity = velocity_on
         return notes
 
     def create_note(
         self, start: float, pitch: int, duration: float, velocity_on: int, round_tick: bool = True
-    ) -> np.ndarray:
+    ) -> NoteArray:
         """Create a note from start, pitch and duration."""
-        notes = np.zeros(1, dtype=note_dtype)
+        notes = NoteArray(np.zeros(1, dtype=note_dtype))
         start_tick = self.time_to_tick(start)
         end = start + duration
         end_ticks = self.time_to_tick(end)
@@ -240,12 +647,12 @@ class Score:
             end = self.tick_to_time(end_ticks)
             duration = end - start
 
-        notes["start"] = start
-        notes["start_tick"] = self.time_to_tick(start)
-        notes["duration"] = duration
-        notes["duration_tick"] = duration_ticks
-        notes["pitch"] = pitch
-        notes["velocity_on"] = velocity_on
+        notes.start[:] = start
+        notes.start_tick[:] = self.time_to_tick(start)
+        notes.duration[:] = duration
+        notes.duration_tick[:] = duration_ticks
+        notes.pitch[:] = pitch
+        notes.velocity[:] = velocity_on
         return notes
 
     def without_empty_tracks(self) -> "Score":
@@ -265,48 +672,59 @@ class Score:
         assert len(time) == len(duration) == len(pitch) == len(velocity), (
             "time, pitch and valocity must have the same length"
         )
-        notes = np.zeros(len(time), dtype=note_dtype)
-        notes["start"] = time
-        notes["duration"] = duration
+        notes = NoteArray(np.zeros(len(time), dtype=note_dtype))
+        notes.start = time
+        notes.duration = duration
         end = time + duration
-        notes["start_tick"] = self.times_to_ticks(time)
+        notes.start_tick = self.times_to_ticks(time)
         end_ticks = self.times_to_ticks(end)
-        duration_ticks = end_ticks - notes["start_tick"]
-        notes["duration_tick"] = duration_ticks
-        notes["pitch"] = pitch
-        notes["velocity_on"] = velocity
+        duration_ticks = end_ticks - notes.start_tick
+        notes.duration_tick = duration_ticks
+        notes.pitch = pitch
+        notes.velocity = velocity
         track = self.tracks[track_id]
-        track.notes = np.concatenate((track.notes, notes))
+        track.notes = NoteArray(np.concatenate((track.notes._data, notes._data)))
 
     def add_controls(self, track_id: int, time: np.ndarray, number: np.ndarray, value: np.ndarray) -> None:
         """Add controls to the score."""
         assert len(time) == len(number) == len(value), "time, number and value must have the same length"
-        controls = np.zeros(len(time), dtype=control_dtype)
-        controls["time"] = time
-        controls["tick"] = self.times_to_ticks(time)
-        controls["number"] = number
-        controls["value"] = value
+        controls_data = np.zeros(len(time), dtype=control_dtype)
+        controls = ControlArray(controls_data)
+        controls.time = time
+        controls.tick = self.times_to_ticks(time)
+        controls.number = number
+        controls.value = value
         track = self.tracks[track_id]
-        track.controls = np.concatenate((track.controls, controls))
+
+        if track.controls.size > 0:
+            # Concatenate the underlying arrays and create a new ControlArray
+            track.controls = ControlArray(np.concatenate((track.controls.as_array(), controls.as_array())))
+        else:
+            track.controls = controls
 
     def add_pitch_bends(self, track_id: int, time: np.ndarray, value: np.ndarray) -> None:
         """Add pitch bends to the score."""
         assert len(time) == len(value), "time and value must have the same length"
-        pitch_bends = np.zeros(len(time), dtype=pitch_bend_dtype)
-        pitch_bends["time"] = time
-        pitch_bends["tick"] = self.times_to_ticks(time)
-        pitch_bends["value"] = value
+        pitch_bends_data = np.zeros(len(time), dtype=pitch_bend_dtype)
+        pitch_bends = PitchBendArray(pitch_bends_data)
+        pitch_bends.time = time
+        pitch_bends.tick = self.times_to_ticks(time)
+        pitch_bends.value = value
         track = self.tracks[track_id]
-        track.pitch_bends = np.concatenate((track.pitch_bends, pitch_bends))
+
+        if track.pitch_bends.size > 0:
+            track.pitch_bends = PitchBendArray(np.concatenate((track.pitch_bends.as_array(), pitch_bends.as_array())))
+        else:
+            track.pitch_bends = pitch_bends
 
     def add_tempos(self, time: np.ndarray, bpm: np.ndarray) -> None:
         """Add tempos to the score."""
         assert len(time) == len(bpm), "time and bpm must have the same length"
-        tempos = np.zeros(len(time), dtype=tempo_dtype)
-        tempos["time"] = time
-        tempos["tick"] = self.times_to_ticks(time)
-        tempos["bpm"] = bpm
-        tempos = np.concatenate((self.tempo, tempos))
+        tempos = TempoArray(np.zeros(len(time), dtype=tempo_dtype))
+        tempos.time = time
+        tempos.tick = self.times_to_ticks(time)
+        tempos.bpm = bpm
+        tempos = TempoArray(np.concatenate((self.tempo._data, tempos._data)))
         self.tempo = tempos
         self._resort_tempo()
         self._recompute_times()
@@ -317,21 +735,21 @@ class Score:
 
     def _resort_tempo(self) -> None:
         """Resort the tempo array."""
-        order = np.argsort(self.tempo["tick"])
+        order = np.argsort(self.tempo.tick)
         self.tempo = self.tempo[order]
 
     def _recompute_times(self) -> None:
         """Recompute the times of the score keeping ticks fixes."""
-        recompute_tempo_times(self.tempo, self.ticks_per_quarter)
+        recompute_tempo_times(self.tempo._data, self.ticks_per_quarter)
         for track in self.tracks:
-            track.notes["start"] = self.ticks_to_times(track.notes["start_tick"])
-            notes_end_ticks = track.notes["start_tick"] + track.notes["duration_tick"]
+            track.notes.start = self.ticks_to_times(track.notes.start_tick)
+            notes_end_ticks = track.notes.start_tick + track.notes.duration_tick
             note_end = self.ticks_to_times(notes_end_ticks)
-            durations = note_end - track.notes["start"]
-            track.notes["duration"] = durations
-            track.controls["time"] = self.ticks_to_times(track.controls["tick"])
-            track.pedals["time"] = self.ticks_to_times(track.pedals["tick"])
-            track.pitch_bends["time"] = self.ticks_to_times(track.pitch_bends["tick"])
+            durations = note_end - track.notes.start
+            track.notes.duration = durations
+            track.controls.time = self.ticks_to_times(track.controls.tick)
+            track.pedals.time = self.ticks_to_times(track.pedals.tick)
+            track.pitch_bends.time = self.ticks_to_times(track.pitch_bends.tick)
 
     def times_to_beats(self, time: np.ndarray) -> np.ndarray:
         """Convert time to beats."""
@@ -399,13 +817,11 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
     return output
 
 
-def extract_notes_start_stop(note_events: np.ndarray, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
-    notes_order = np.lexsort(
-        (note_events["event_type"], note_events["tick"], note_events["value1"], note_events["channel"])
-    )
+def extract_notes_start_stop(note_events: EventArray, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
+    notes_order = np.lexsort((note_events.event_type, note_events.tick, note_events.value1, note_events.channel))
     sorted_note_events = note_events[notes_order]
     ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(
-        sorted_note_events, notes_mode_mapping[notes_mode]
+        sorted_note_events._data, notes_mode_mapping[notes_mode]
     )
     if len(ordered_note_start_ids) > 0:
         note_start_ids = notes_order[ordered_note_start_ids]
@@ -421,17 +837,18 @@ def extract_notes_start_stop(note_events: np.ndarray, notes_mode: NotesMode) -> 
     return note_start_ids, note_stop_ids
 
 
-def get_pedals_from_controls(channel_controls: np.ndarray) -> np.ndarray:
-    pedals_start, pedals_end = get_pedals_from_controls_jit(channel_controls)
+def get_pedals_from_controls(channel_controls: ControlArray) -> PedalArray:
+    """Get pedal events from control changes."""
+    pedals_start, pedals_end = get_pedals_from_controls_jit(channel_controls.as_array())
     if len(pedals_start) > 0:
-        pedals = np.zeros(len(pedals_start), dtype=pedal_dtype)
-        pedals["time"] = channel_controls[pedals_start]["time"]
-        pedals["tick"] = channel_controls[pedals_start]["tick"]
-        pedals["duration"] = channel_controls[pedals_end]["time"] - channel_controls[pedals_end]["time"]
-        pedals["duration_tick"] = channel_controls[pedals_end]["tick"] - channel_controls[pedals_end]["tick"]
-
+        pedals_data = np.zeros(len(pedals_start), dtype=pedal_dtype)
+        pedals = PedalArray(pedals_data)
+        pedals.time = channel_controls.time[pedals_start]
+        pedals.tick = channel_controls.tick[pedals_start]
+        pedals.duration = channel_controls.time[pedals_end] - channel_controls.time[pedals_start]
+        pedals.duration_tick = channel_controls.tick[pedals_end] - channel_controls.tick[pedals_start]
     else:
-        pedals = np.zeros((0,), dtype=pedal_dtype)
+        pedals = PedalArray(np.zeros((0,), dtype=pedal_dtype))
     return pedals
 
 
@@ -447,37 +864,37 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     all_tempo_events = []
 
     for midi_track in midi_score.tracks:
-        tempo_change_mask = midi_track.events["event_type"] == 5
+        tempo_change_mask = midi_track.events.event_type == 5
         num_tempo_change = np.sum(tempo_change_mask)
         if num_tempo_change > 0:
             tempo_change = midi_track.events[tempo_change_mask]
             # keep only the last tempo change for each tick
-            keep = np.hstack((np.diff(tempo_change["tick"]) > 0, [True]))
-            all_tempo_events.append(tempo_change[keep])
+            keep = np.hstack((np.diff(tempo_change.tick) > 0, [True]))
+            all_tempo_events.append(tempo_change[keep]._data)
     if len(all_tempo_events) > 0:
-        tempo_events = np.concatenate(all_tempo_events, axis=0)
+        tempo_events = EventArray(np.concatenate(all_tempo_events, axis=0))
         # sort by tick
-        tempo_events = tempo_events[np.argsort(tempo_events["tick"])]
+        tempo_events = tempo_events[np.argsort(tempo_events.tick)]
         # keep only the last tempo change for each tick
-        tempo_events = tempo_events[np.hstack((np.diff(tempo_events["tick"]) > 0, [True]))]
+        tempo_events = tempo_events[np.hstack((np.diff(tempo_events.tick) > 0, [True]))]
     else:
         # if no tempo events are found, we create a default one
-        tempo_events = np.zeros(1, dtype=event_dtype)
-        tempo_events["event_type"] = 5
-        tempo_events["channel"] = 0
-        tempo_events["value1"] = 120 * 1000000.0 / 60.0
-        tempo_events["value2"] = 0
-        tempo_events["tick"] = 0
+        tempo_events = EventArray(np.zeros(1, dtype=event_dtype))
+        tempo_events.event_type[:] = 5
+        tempo_events.channel[:] = 0
+        tempo_events.value1[:] = 120 * 1000000.0 / 60.0
+        tempo_events.value2[:] = 0
+        tempo_events.tick[:] = 0
 
-    tempo_events_times = get_event_times(tempo_events, tempo_events, midi_score.ticks_per_quarter)
-    tempo = np.zeros(len(tempo_events), dtype=tempo_dtype)
-    tempo["time"] = tempo_events_times
-    tempo["tick"] = tempo_events["tick"]
-    tempo["bpm"] = 60000000 / tempo_events["value1"]
+    tempo_events_times = get_event_times(tempo_events._data, tempo_events._data, midi_score.ticks_per_quarter)
+    tempo = TempoArray(np.zeros(len(tempo_events), dtype=tempo_dtype))
+    tempo.time = tempo_events_times
+    tempo.tick = tempo_events.tick
+    tempo.bpm = 60000000 / tempo_events.value1
 
     # remove unnecessary tempo events
     if minimize_tempo:
-        tempo = tempo[np.hstack(([True], (np.diff(tempo["bpm"]) != 0)))]
+        tempo = tempo[np.hstack(([True], (np.diff(tempo.bpm) != 0)))]
 
     lyrics = []
     for _, midi_track in enumerate(midi_score.tracks):
@@ -490,7 +907,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         if midi_track.events.size == 0:
             continue
         # if only tempo events, skip the track
-        if np.all(midi_track.events["event_type"] == 5):
+        if np.all(midi_track.events.event_type == 5):
             continue
         numerator, denominator = midi_track.time_signature
 
@@ -498,25 +915,25 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         notated_32nd_notes_per_beat = midi_track.notated_32nd_notes_per_beat
 
         # get the program for each event
-        events_programs = get_events_program(midi_track.events)
+        events_programs = get_events_program(midi_track.events._data)
 
         events = midi_track.events
         # compute the tick and time of each event
-        events_ticks = events["tick"]
-        events_times = get_event_times(events, tempo_events, midi_score.ticks_per_quarter)
+        events_ticks = events.tick
+        events_times = get_event_times(events._data, tempo_events._data, midi_score.ticks_per_quarter)
 
         duration = max(duration, events_times.max())
 
         # sort all the events in lexicographic order by channel and tick
         # this allows to have a order for the events that simplifies the code to process them
-        events_groups = group_data([events_programs, events["channel"]])
+        events_groups = group_data([events_programs, events.channel])
         # sort in lexicographic order by pitch first and then by tick, then even type
         # this allows to have a order for the events that simplifies the
         # extracting matching note starts and stops
         # we sort by inverse of event type in order to deal with the case there is no gap
         # between two consecutive notes
         # extract the event of type note on or note off
-        notes_events_ids = np.nonzero((events["event_type"] == 0) | (events["event_type"] == 1))[0]
+        notes_events_ids = np.nonzero((events.event_type == 0) | (events.event_type == 1))[0]
         note_groups: dict[Any, np.ndarray] = {}
         if len(notes_events_ids) > 0:
             note_events = events[notes_events_ids]
@@ -529,7 +946,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
 
                 # the note stop need to be give the same program as the note start
                 note_programs = events_programs[note_start_ids]
-                note_channels = events["channel"][note_start_ids]
+                note_channels = events.channel[note_start_ids]
                 note_start_events = events[note_start_ids]
                 note_stop_events = events[note_stop_ids]
                 note_starts_time = events_times[note_start_ids]
@@ -537,22 +954,20 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
 
                 note_groups = group_data([note_programs, note_channels])
 
-        control_change_events_ids = np.nonzero(events["event_type"] == 3)[0]
+        control_change_events_ids = np.nonzero(events.event_type == 3)[0]
 
         control_change_events = events[control_change_events_ids]
-        channels_controls = {channel: np.zeros((0,), dtype=control_dtype) for channel in range(16)}
+        channels_controls = {channel: ControlArray(np.zeros((0,), dtype=control_dtype)) for channel in range(16)}
         if len(control_change_events) > 0:
-            channels_control_change_events_ids = group_data(
-                [control_change_events["channel"]], control_change_events_ids
-            )
+            channels_control_change_events_ids = group_data([control_change_events.channel], control_change_events_ids)
 
             for channel, channel_control_change_events_ids in channels_control_change_events_ids.items():
                 channel_control_change_events = events[channel_control_change_events_ids]
-                controls = np.zeros(len(channel_control_change_events_ids), dtype=control_dtype)
-                controls["time"] = events_times[channel_control_change_events_ids]
-                controls["tick"] = events_ticks[channel_control_change_events_ids]
-                controls["number"] = channel_control_change_events["value1"]
-                controls["value"] = channel_control_change_events["value2"]
+                controls = ControlArray(np.zeros(len(channel_control_change_events_ids), dtype=control_dtype))
+                controls.time = events_times[channel_control_change_events_ids]
+                controls.tick = events_ticks[channel_control_change_events_ids]
+                controls.number = channel_control_change_events.value1
+                controls.value = channel_control_change_events.value2
                 channels_controls[channel] = controls
 
         channels_pedals = {}
@@ -560,7 +975,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             if len(channel_controls) > 0:
                 pedals = get_pedals_from_controls(channel_controls)
             else:
-                pedals = np.zeros((0,), dtype=pedal_dtype)
+                pedals = PedalArray(np.zeros((0,), dtype=pedal_dtype))
             channels_pedals[channel] = pedals
 
         assert len(events_groups) > 0
@@ -578,29 +993,29 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             track_events_ticks = events_ticks[track_events_ids]
             assert np.all(np.diff(track_events_ticks) >= 0)
 
-            pitch_bends_mask = track_events["event_type"] == 2
+            pitch_bends_mask = track_events.event_type == 2
             pitch_bends_events = track_events[pitch_bends_mask]
-            pitch_bends = np.zeros(len(pitch_bends_events), dtype=pitch_bend_dtype)
-            pitch_bends["time"] = track_events_times[pitch_bends_mask]
-            pitch_bends["tick"] = track_events_ticks[pitch_bends_mask]
-            pitch_bends["value"] = pitch_bends_events["value1"]
+            pitch_bends = PitchBendArray(np.zeros(len(pitch_bends_events), dtype=pitch_bend_dtype))
+            pitch_bends.time = track_events_times[pitch_bends_mask]
+            pitch_bends.tick = track_events_ticks[pitch_bends_mask]
+            pitch_bends.value = pitch_bends_events.value1
 
             # extract the event of type note on or note off
             if len(track_notes_ids) == 0:
-                notes_np = np.zeros(0, dtype=note_dtype)
+                notes_np = NoteArray(np.zeros(0, dtype=note_dtype))
             else:
-                notes_np = np.zeros(len(track_notes_ids), dtype=note_dtype)
+                notes_np = NoteArray(np.zeros(len(track_notes_ids), dtype=note_dtype))
                 track_note_start_events = note_start_events[track_notes_ids]
                 track_note_stop_events = note_stop_events[track_notes_ids]
-                notes_np["start"] = note_starts_time[track_notes_ids]
-                notes_np["start_tick"] = track_note_start_events["tick"]
-                notes_np["duration"] = note_stops_time[track_notes_ids] - note_starts_time[track_notes_ids]
-                notes_np["duration_tick"] = np.uint32(
-                    np.int64(track_note_stop_events["tick"]) - np.int64(track_note_start_events["tick"])
-                )
-                # assert np.all(notes_np["duration_tick"] > 0), "duration_tick should be strictly positive"
-                notes_np["pitch"] = track_note_start_events["value1"]
-                notes_np["velocity_on"] = track_note_start_events["value2"]
+                notes_np.start = note_starts_time[track_notes_ids]
+                notes_np.start_tick = track_note_start_events.tick
+                notes_np.duration = note_stops_time[track_notes_ids] - note_starts_time[track_notes_ids]
+                notes_np.duration_tick = track_note_stop_events.tick.astype(
+                    np.uint32
+                ) - track_note_start_events.tick.astype(np.uint32)
+                # assert np.all(notes_np.duration_tick > 0), "duration_tick should be strictly positive"
+                notes_np.pitch = track_note_start_events.value1
+                notes_np.velocity = track_note_start_events.value2
 
                 # reorder using the original midi order
                 notes_np = notes_np[np.argsort(note_start_ids[track_notes_ids])]
@@ -651,27 +1066,27 @@ def score_to_midi(score: Score) -> Midi:
         for track in score.tracks:
             num_events += len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
         num_events += len(score.tempo)
-        events = np.zeros(num_events, dtype=event_dtype)
+        events = EventArray(np.zeros(num_events, dtype=event_dtype))
 
         id_start = 0
 
         tempo = score.tempo
-        events["tick"][id_start : id_start + len(tempo)] = tempo["tick"]
-        events["event_type"][id_start : id_start + len(tempo)] = 5
-        events["channel"][id_start : id_start + len(tempo)] = 0
-        events["value1"][id_start : id_start + len(tempo)] = 60000000 / tempo["bpm"]
-        events["value2"][id_start : id_start + len(tempo)] = 0
+        events.tick[id_start : id_start + len(tempo)] = tempo.tick
+        events.event_type[id_start : id_start + len(tempo)] = 5
+        events.channel[id_start : id_start + len(tempo)] = 0
+        events.value1[id_start : id_start + len(tempo)] = 60000000 / tempo.bpm
+        events.value2[id_start : id_start + len(tempo)] = 0
         id_start += len(tempo)
 
         lyrics = score.lyrics
     else:
         # create track with the tempo changes
-        tempo_events = np.zeros(len(score.tempo), dtype=event_dtype)
-        tempo_events["event_type"] = 5
-        tempo_events["channel"] = 0
-        tempo_events["value1"] = 60000000 / score.tempo["bpm"]
-        tempo_events["value2"] = 0
-        tempo_events["tick"] = score.tempo["tick"]
+        tempo_events = EventArray(np.zeros(len(score.tempo), dtype=event_dtype))
+        tempo_events.event_type[:] = 5
+        tempo_events.channel[:] = 0
+        tempo_events.value1[:] = 60000000 / score.tempo.bpm
+        tempo_events.value2[:] = 0
+        tempo_events.tick[:] = score.tempo.tick
         midi_tracks.append(
             MidiTrack(
                 name="tempo",
@@ -687,7 +1102,7 @@ def score_to_midi(score: Score) -> Midi:
             midi_tracks.append(
                 MidiTrack(
                     name="lyrics",
-                    events=np.zeros(0, dtype=event_dtype),
+                    events=EventArray(np.zeros(0, dtype=event_dtype)),
                     lyrics=score.lyrics,
                     time_signature=score.time_signature,
                     clocks_per_click=score.clocks_per_click,
@@ -699,65 +1114,63 @@ def score_to_midi(score: Score) -> Midi:
     for track in score.tracks:
         if use_multiple_tracks:
             num_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
-            events = np.zeros(num_events, dtype=event_dtype)
+            events = EventArray(np.zeros(num_events, dtype=event_dtype))
             id_start = 0
 
         num_track_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
 
         if num_track_events == 0:
             # create a dummy end of song event to keep the track with a duration
-            events = np.zeros(1, dtype=event_dtype)
-            events["event_type"] = 6
-            events["channel"] = 0
-            events["value1"] = 0
-            events["value2"] = 0
+            events = EventArray(np.zeros(1, dtype=event_dtype))
+            events.event_type[:] = 6
+            events.channel[:] = 0
+            events.value1[:] = 0
+            events.value2[:] = 0
             tick = score.last_tick()
-            events["tick"] = tick
+            events.tick[:] = tick
 
-        events["channel"][id_start : id_start + num_track_events] = track.channel
+        events.channel[id_start : id_start + num_track_events] = track.channel
 
         # add the program change event
-        events["event_type"][id_start] = 4
-        events["value1"][id_start] = track.program
-        events["value2"][id_start] = 0
-        events["tick"][id_start] = 0
+        events.event_type[id_start] = 4
+        events.value1[id_start] = track.program
+        events.value2[id_start] = 0
+        events.tick[id_start] = 0
         id_start += 1
 
         # add the notes on events
-        events["event_type"][id_start : id_start + len(track.notes)] = 0
-        events["value1"][id_start : id_start + len(track.notes)] = track.notes["pitch"]
-        events["value2"][id_start : id_start + len(track.notes)] = track.notes["velocity_on"]
-        events["tick"][id_start : id_start + len(track.notes)] = track.notes["start_tick"]
+        events.event_type[id_start : id_start + len(track.notes)] = 0
+        events.value1[id_start : id_start + len(track.notes)] = track.notes.pitch
+        events.value2[id_start : id_start + len(track.notes)] = track.notes.velocity
+        events.tick[id_start : id_start + len(track.notes)] = track.notes.start_tick
         id_start += len(track.notes)
 
         # add the notes off events
-        events["event_type"][id_start : id_start + len(track.notes)] = 1
-        events["value1"][id_start : id_start + len(track.notes)] = track.notes["pitch"]
-        events["value2"][id_start : id_start + len(track.notes)] = 0
-        events["tick"][id_start : id_start + len(track.notes)] = (
-            track.notes["start_tick"] + track.notes["duration_tick"]
-        )
-        # assert np.all(track.notes["duration_tick"] > 0), "duration_tick should be strictly positive"
+        events.event_type[id_start : id_start + len(track.notes)] = 1
+        events.value1[id_start : id_start + len(track.notes)] = track.notes.pitch
+        events.value2[id_start : id_start + len(track.notes)] = 0
+        events.tick[id_start : id_start + len(track.notes)] = track.notes.start_tick + track.notes.duration_tick
+        # assert np.all(track.notes.duration_tick > 0), "duration_tick should be strictly positive"
         id_start += len(track.notes)
 
         # add the control change events
-        events["event_type"][id_start : id_start + len(track.controls)] = 3
-        events["value1"][id_start : id_start + len(track.controls)] = track.controls["number"]
-        events["value2"][id_start : id_start + len(track.controls)] = track.controls["value"]
-        events["tick"][id_start : id_start + len(track.controls)] = track.controls["tick"]
+        events.event_type[id_start : id_start + len(track.controls)] = 3
+        events.value1[id_start : id_start + len(track.controls)] = track.controls.number
+        events.value2[id_start : id_start + len(track.controls)] = track.controls.value
+        events.tick[id_start : id_start + len(track.controls)] = track.controls.tick
         id_start += len(track.controls)
 
         # TODO check that the pedals are consistent with the controls
 
         # add the pitch bend events
-        events["event_type"][id_start : id_start + len(track.pitch_bends)] = 2
-        events["value1"][id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["value"]
-        events["value2"][id_start : id_start + len(track.pitch_bends)] = 0
-        events["tick"][id_start : id_start + len(track.pitch_bends)] = track.pitch_bends["tick"]
+        events.event_type[id_start : id_start + len(track.pitch_bends)] = 2
+        events.value1[id_start : id_start + len(track.pitch_bends)] = track.pitch_bends.value
+        events.value2[id_start : id_start + len(track.pitch_bends)] = 0
+        events.tick[id_start : id_start + len(track.pitch_bends)] = track.pitch_bends.tick
         id_start += len(track.pitch_bends)
 
         if use_multiple_tracks:
-            order = np.lexsort((np.arange(len(events)), events["tick"]))
+            order = np.lexsort((np.arange(len(events)), events.tick))
             events = events[order]
             midi_track = MidiTrack(
                 name=track.name,
@@ -772,7 +1185,7 @@ def score_to_midi(score: Score) -> Midi:
     if not use_multiple_tracks:
         # sort by tick and keep the original order of the events
         # for event with the same tick,
-        order = np.lexsort((np.arange(len(events)), events["tick"]))
+        order = np.lexsort((np.arange(len(events)), events.tick))
         events = events[order]
 
         midi_track = MidiTrack(
@@ -837,18 +1250,24 @@ def merge_tracks_with_same_program(score: Score) -> Score:
         if track.program not in tracks_dict:
             tracks_dict[track.program] = track
         else:
-            tracks_dict[track.program].notes = np.concatenate((tracks_dict[track.program].notes, track.notes))
-            tracks_dict[track.program].controls = np.concatenate((tracks_dict[track.program].controls, track.controls))
-            tracks_dict[track.program].pedals = np.concatenate((tracks_dict[track.program].pedals, track.pedals))
-            tracks_dict[track.program].pitch_bends = np.concatenate(
-                (tracks_dict[track.program].pitch_bends, track.pitch_bends)
+            tracks_dict[track.program].notes = NoteArray(
+                np.concatenate((tracks_dict[track.program].notes._data, track.notes._data))
+            )
+            tracks_dict[track.program].controls = ControlArray(
+                np.concatenate((tracks_dict[track.program].controls._data, track.controls._data))
+            )
+            tracks_dict[track.program].pedals = PedalArray(
+                np.concatenate((tracks_dict[track.program].pedals._data, track.pedals._data))
+            )
+            tracks_dict[track.program].pitch_bends = PitchBendArray(
+                np.concatenate((tracks_dict[track.program].pitch_bends._data, track.pitch_bends._data))
             )
     # sort the note, control, pedal and pitch_bend arrays
     for _, track in tracks_dict.items():
-        track.notes = np.sort(track.notes, order="start")
-        track.controls = np.sort(track.controls, order="time")
-        track.pedals = np.sort(track.pedals, order="time")
-        track.pitch_bends = np.sort(track.pitch_bends, order="time")
+        track.notes._data = np.sort(track.notes._data, order="start")
+        track.controls._data = np.sort(track.controls._data, order="time")
+        track.pedals._data = np.sort(track.pedals._data, order="time")
+        track.pitch_bends._data = np.sort(track.pitch_bends._data, order="time")
     # sort tracks by program
     tracks = list(tracks_dict.values())
     tracks.sort(key=lambda x: x.program)
@@ -911,7 +1330,7 @@ def remove_pitch_bends(score: Score) -> Score:
     tracks = []
     for track in score.tracks:
         new_track = copy(track)
-        new_track.pitch_bends = np.array([], dtype=track.pitch_bends.dtype)
+        new_track.pitch_bends = PitchBendArray(np.array([], dtype=track.pitch_bends._data.dtype))
         tracks.append(new_track)
 
     return Score(
@@ -931,7 +1350,7 @@ def remove_pedals(score: Score) -> Score:
     tracks = []
     for track in score.tracks:
         new_track = copy(track)
-        new_track.pedals = np.array([], dtype=track.pedals.dtype)
+        new_track.pedals = PedalArray(np.array([], dtype=track.pedals._data.dtype))
         tracks.append(new_track)
 
     return Score(
@@ -951,7 +1370,7 @@ def remove_control_changes(score: Score) -> Score:
     tracks = []
     for track in score.tracks:
         new_track = copy(track)
-        new_track.controls = np.array([], dtype=track.controls.dtype)
+        new_track.controls = ControlArray(np.array([], dtype=track.controls._data.dtype))
         tracks.append(new_track)
 
     return Score(
@@ -970,7 +1389,7 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
     tracks = []
     for track in score.tracks:
         new_track = copy(track)
-        keep = (track.notes["pitch"] >= pitch_min) & (track.notes["pitch"] < pitch_max)
+        keep = (track.notes.pitch >= pitch_min) & (track.notes.pitch < pitch_max)
         new_track.notes = track.notes[keep]
         tracks.append(new_track)
     return Score(
@@ -985,21 +1404,19 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
     )
 
 
-def get_overlapping_notes(notes: np.ndarray) -> np.ndarray:
-    order = np.lexsort((notes["start"], notes["pitch"]))
-    overlapping_notes = _get_overlapping_notes_pairs_jit(notes["start"], notes["duration"], notes["pitch"], order)
+def get_overlapping_notes(notes: NoteArray) -> np.ndarray:
+    order = np.lexsort((notes.start, notes.pitch))
+    overlapping_notes = _get_overlapping_notes_pairs_jit(notes.start, notes.duration, notes.pitch, order)
     return overlapping_notes
 
 
-def get_overlapping_notes_ticks(notes: np.ndarray) -> np.ndarray:
-    order = np.lexsort((notes["start_tick"], notes["pitch"]))
-    overlapping_notes = _get_overlapping_notes_pairs_jit(
-        notes["start_tick"], notes["duration_tick"], notes["pitch"], order
-    )
+def get_overlapping_notes_ticks(notes: NoteArray) -> np.ndarray:
+    order = np.lexsort((notes.start_tick, notes.pitch))
+    overlapping_notes = _get_overlapping_notes_pairs_jit(notes.start_tick, notes.duration_tick, notes.pitch, order)
     return overlapping_notes
 
 
-def check_no_overlapping_notes(notes: np.ndarray, use_ticks: bool = True) -> None:
+def check_no_overlapping_notes(notes: NoteArray, use_ticks: bool = True) -> None:
     """Check that there are no overlapping notes at the same pitch."""
     if use_ticks:
         overlapping_notes = get_overlapping_notes_ticks(notes)
@@ -1014,77 +1431,77 @@ def check_no_overlapping_notes_in_score(score: Score) -> None:
         check_no_overlapping_notes(track.notes)
 
 
-def time_to_tick(time: float, tempo: np.ndarray, ticks_per_quarter: int) -> int:
+def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> int:
     """Convert a time in seconds to tick."""
     # get the tempo at the start of the time range
     tempo_idx: int = 0
     if tempo.size > 1:
-        tempo_idx = int(np.searchsorted(tempo["time"], time, side="right") - 1)
+        tempo_idx = int(np.searchsorted(tempo.time, time, side="right") - 1)
 
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    bpm = tempo["bpm"][tempo_idx]
-    ref_ticks = tempo["tick"][tempo_idx]
-    ref_time = tempo["time"][tempo_idx]
+    bpm = tempo.bpm[tempo_idx]
+    ref_ticks = tempo.tick[tempo_idx]
+    ref_time = tempo.time[tempo_idx]
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return int(ref_ticks + (time - ref_time) * ticks_per_second)
 
 
-def tick_to_time(tick: int, tempo: np.ndarray, ticks_per_quarter: int) -> float:
+def tick_to_time(tick: int, tempo: TempoArray, ticks_per_quarter: int) -> float:
     """Convert a tick to time in seconds."""
     # get the tempo at the start of the time range
-    tempo_idx = np.searchsorted(tempo["tick"], tick, side="right") - 1
+    tempo_idx = np.searchsorted(tempo.tick, tick, side="right") - 1
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    bpm = tempo["bpm"][tempo_idx]
-    ref_ticks = tempo["tick"][tempo_idx]
-    ref_time = tempo["time"][tempo_idx]
+    bpm = tempo.bpm[tempo_idx]
+    ref_ticks = tempo.tick[tempo_idx]
+    ref_time = tempo.time[tempo_idx]
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return ref_time + (tick - ref_ticks) / ticks_per_second
 
 
-def ticks_to_times(tick: np.ndarray, tempo: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
+def ticks_to_times(tick: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> np.ndarray:
     """Convert a tick to time in seconds."""
     # get the tempo at the start of the time range
-    tempo_idx = np.searchsorted(tempo["tick"], tick, side="right") - 1
+    tempo_idx = np.searchsorted(tempo.tick, tick, side="right") - 1
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    bpm = tempo["bpm"][tempo_idx]
-    ref_ticks = tempo["tick"][tempo_idx]
-    ref_time = tempo["time"][tempo_idx]
+    bpm = tempo.bpm[tempo_idx]
+    ref_ticks = tempo.tick[tempo_idx]
+    ref_time = tempo.time[tempo_idx]
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return ref_time + (tick - ref_ticks) / ticks_per_second
 
 
-def times_to_ticks(time: np.ndarray, tempo: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
+def times_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> np.ndarray:
     """Convert a time in seconds to ticks."""
     # get the tempo at the start of the time range
     if tempo.size > 1:
-        tempo_idx = np.searchsorted(tempo["time"], time, side="right") - 1
+        tempo_idx = np.searchsorted(tempo.time, time, side="right") - 1
     else:
         tempo_idx = np.zeros(len(time), dtype=np.int32)
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    bpm = tempo["bpm"][tempo_idx]
-    ref_ticks = tempo["tick"][tempo_idx]
-    ref_time = tempo["time"][tempo_idx]
+    bpm = tempo.bpm[tempo_idx]
+    ref_ticks = tempo.tick[tempo_idx]
+    ref_time = tempo.time[tempo_idx]
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return (ref_ticks + (time - ref_time) * ticks_per_second).astype(np.int32)
 
 
-def update_ticks(score: Score, tempo: np.ndarray) -> Score:
+def update_ticks(score: Score, tempo: TempoArray) -> Score:
     """Update the ticks of the score according to the tempo."""
     tracks = []
     for track in score.tracks:
         new_track = copy(track)
-        new_track.notes["start_tick"] = times_to_ticks(new_track.notes["start"], tempo, score.ticks_per_quarter)
-        new_track.notes["duration_tick"] = (
-            times_to_ticks(new_track.notes["start"] + new_track.notes["duration"], tempo, score.ticks_per_quarter)
-            - new_track.notes["start_tick"]
+        new_track.notes.start_tick = times_to_ticks(new_track.notes.start, tempo, score.ticks_per_quarter)
+        new_track.notes.duration_tick = (
+            times_to_ticks(new_track.notes.start + new_track.notes.duration, tempo, score.ticks_per_quarter)
+            - new_track.notes.start_tick
         )
-        new_track.pedals["tick"] = times_to_ticks(new_track.pedals["time"], tempo, score.ticks_per_quarter)
-        new_track.controls["tick"] = times_to_ticks(new_track.controls["time"], tempo, score.ticks_per_quarter)
-        new_track.pitch_bends["tick"] = times_to_ticks(new_track.pitch_bends["time"], tempo, score.ticks_per_quarter)
+        new_track.pedals.tick = times_to_ticks(new_track.pedals.time, tempo, score.ticks_per_quarter)
+        new_track.controls.tick = times_to_ticks(new_track.controls.time, tempo, score.ticks_per_quarter)
+        new_track.pitch_bends.tick = times_to_ticks(new_track.pitch_bends.time, tempo, score.ticks_per_quarter)
         tracks.append(new_track)
 
     return Score(
@@ -1106,61 +1523,61 @@ def crop_score(score: Score, start: float, end: float) -> Score:
     """
     tracks = []
     duration = end - start
-    previous_tempos = np.nonzero(score.tempo["time"] < start)[0]
-    tempo_keep = (score.tempo["time"] < end) & (score.tempo["time"] >= start)
+    previous_tempos = TempoArray(np.nonzero(score.tempo.time < start)[0])
+    tempo_keep = (score.tempo.time < end) & (score.tempo.time >= start)
     if len(previous_tempos) > 0:
         tempo_keep[previous_tempos[-1]] = True
     new_tempo = score.tempo[tempo_keep]
-    new_tempo["time"] = np.maximum(new_tempo["time"] - start, 0)
+    new_tempo.time = np.maximum(new_tempo.time - start, 0)
     tick_end = time_to_tick(end, score.tempo, score.ticks_per_quarter)
     tick_start = time_to_tick(start, score.tempo, score.ticks_per_quarter)
-    new_tempo["tick"] = np.maximum(new_tempo["tick"] - tick_start, 0)
+    new_tempo.tick = np.maximum(new_tempo.tick - tick_start, 0)
 
     for track in score.tracks:
         notes = track.notes
-        notes_end = notes["start"] + notes["duration"]
-        notes_end_tick = notes["start_tick"] + notes["duration_tick"]
-        notes_keep = (notes["start"] < end) & (notes_end > start)
+        notes_end = notes.start + notes.duration
+        notes_end_tick = notes.start_tick + notes.duration_tick
+        notes_keep = (notes.start < end) & (notes_end > start)
         new_notes = notes[notes_keep]
         # if len(new_notes) == 0:
         #     continue
-        new_notes["start"] = np.maximum(new_notes["start"] - start, 0)
+        new_notes.start = np.maximum(new_notes.start - start, 0)
         new_notes_end = np.minimum(notes_end[notes_keep] - start, end - start)
-        new_notes["duration"] = new_notes_end - new_notes["start"]
-        new_notes["start_tick"] = np.maximum(new_notes["start_tick"] - tick_start, 0)
+        new_notes.duration = new_notes_end - new_notes.start
+        new_notes.start_tick = np.maximum(new_notes.start_tick - tick_start, 0)
         new_notes_end_tick = np.minimum(notes_end_tick[notes_keep] - tick_start, tick_end - tick_start)
-        new_notes["duration_tick"] = new_notes_end_tick - new_notes["start_tick"]
+        new_notes.duration_tick = new_notes_end_tick - new_notes.start_tick
 
         assert np.all(new_notes_end <= end - start), "Note end time exceeds score duration"
 
-        pedals_end = track.pedals["time"] + track.pedals["duration"]
-        pedals_keep = (track.pedals["time"] < end) & (pedals_end > start)
+        pedals_end = track.pedals.time + track.pedals.duration
+        pedals_keep = (track.pedals.time < end) & (pedals_end > start)
         # keep the last pedal before the start time
-        last_previous_pedal = np.nonzero(track.pedals["time"] < start)[0]
+        last_previous_pedal = np.nonzero(track.pedals.time < start)[0]
         pedals_keep[last_previous_pedal] = True
         new_pedals = track.pedals[pedals_keep]
         new_pedals_end = np.minimum(pedals_end[pedals_keep], end) - start
-        new_pedals["duration"] = new_pedals_end - new_pedals["time"]
-        new_pedals["time"] = np.maximum(new_pedals["time"] - start, 0)
-        new_pedals["tick"] = np.maximum(new_pedals["tick"] - tick_start, 0)
+        new_pedals.duration = new_pedals_end - new_pedals.time
+        new_pedals.time = np.maximum(new_pedals.time - start, 0)
+        new_pedals.tick = np.maximum(new_pedals.tick - tick_start, 0)
 
-        controls_keep = (track.controls["time"] < end) & (track.controls["time"] >= start)
+        controls_keep = (track.controls.time < end) & (track.controls.time >= start)
         # for each control number keep the last value before the start time
-        previous_controls = track.controls[track.controls["time"] < start]
+        previous_controls = track.controls[track.controls.time < start]
         last_control = np.full((127,), -1, dtype=np.int32)
-        last_control[previous_controls["number"]] = np.arange(len(previous_controls))
+        last_control[previous_controls.number] = np.arange(len(previous_controls))
         controls_keep[last_control[last_control >= 0]] = True
         new_controls = track.controls[controls_keep]
-        new_controls["time"] = np.maximum(new_controls["time"] - start, 0)
-        new_controls["tick"] = np.maximum(new_controls["tick"] - tick_start, 0)
+        new_controls.time = np.maximum(new_controls.time - start, 0)
+        new_controls.tick = np.maximum(new_controls.tick - tick_start, 0)
 
-        pitch_bends_keep = (track.pitch_bends["time"] < end) & (track.pitch_bends["time"] >= start)
+        pitch_bends_keep = (track.pitch_bends.time < end) & (track.pitch_bends.time >= start)
         # keep the last pitch bend before the start time
-        last_previous_pitch_bend = np.nonzero(track.pitch_bends["time"] < start)[0]
+        last_previous_pitch_bend = np.nonzero(track.pitch_bends.time < start)[0]
         pitch_bends_keep[last_previous_pitch_bend] = True
         new_pitch_bends = track.pitch_bends[pitch_bends_keep]
-        new_pitch_bends["time"] = np.maximum(new_pitch_bends["time"] - start, 0)
-        new_pitch_bends["tick"] = np.maximum(new_pitch_bends["tick"] - tick_start, 0)
+        new_pitch_bends.time = np.maximum(new_pitch_bends.time - start, 0)
+        new_pitch_bends.tick = np.maximum(new_pitch_bends.tick - tick_start, 0)
 
         new_track = Track(
             channel=track.channel,
@@ -1210,29 +1627,29 @@ def distance(score1: Score, score2: Score, sort_tracks_with_programs: bool = Fal
         tracks_2 = sorted(tracks_2, key=lambda x: x.program)
     for track1, track2 in zip(tracks_1, tracks_2):
         print("Programs", track1.program, track2.program)
-        print("Notes", track1.notes.shape, track2.notes.shape)
-        print("Controls", track1.controls.shape, track2.controls.shape)
-        print("Pedals", track1.pedals.shape, track2.pedals.shape)
-        print("Pitch bends", track1.pitch_bends.shape, track2.pitch_bends.shape)
+        # print("Notes", track1.notes.shape, track2.notes.shape)
+        print("Controls", track1.controls.size, track2.controls.size)
+        print("Pedals", track1.pedals.size, track2.pedals.size)
+        print("Pitch bends", track1.pitch_bends.size, track2.pitch_bends.size)
 
         # max note time difference
-        max_start_time_diff = max(abs(track1.notes["start"] - track2.notes["start"]))
-        max_duration_diff = max(abs(track1.notes["duration"] - track2.notes["duration"]))
+        max_start_time_diff = max(abs(track1.notes.start - track2.notes.start))
+        max_duration_diff = max(abs(track1.notes.duration - track2.notes.duration))
         print("Max note start time difference", max_start_time_diff)
         print("Max note duration difference", max_duration_diff)
         max_diff = max(max_diff, max_start_time_diff, max_duration_diff)
         # max control time difference
-        max_control_time_diff = max(abs(track1.controls["time"] - track2.controls["time"]))
+        max_control_time_diff = max(abs(track1.controls.time - track2.controls.time))
         print("Max control time difference", max_control_time_diff)
         max_diff = max(max_diff, max_control_time_diff)
         # max pedal time difference
         if track1.pedals.size > 0:
-            max_pedal_time_diff = max(abs(track1.pedals["time"] - track2.pedals["time"]))
+            max_pedal_time_diff = max(abs(track1.pedals.time - track2.pedals.time))
             print("Max pedal time difference", max_pedal_time_diff)
             max_diff = max(max_diff, max_pedal_time_diff)
         # max pitch bend time difference
         if track1.pitch_bends.size > 0:
-            max_pitch_bend_time_diff = max(abs(track1.pitch_bends["time"] - track2.pitch_bends["time"]))
+            max_pitch_bend_time_diff = max(abs(track1.pitch_bends.time - track2.pitch_bends.time))
             print("Max pitch bend time difference", max_pitch_bend_time_diff)
             max_diff = max(max_diff, max_pitch_bend_time_diff)
     return max_diff
@@ -1253,16 +1670,16 @@ def assert_scores_equal(
 
     # sort by nme, program and then by number of notes to try to have the same order
     if compare_channels:
-        tracks_1 = sorted(tracks_1, key=lambda x: (x.name, x.program, x.channel, len(x.notes), x.notes["pitch"].sum()))
-        tracks_2 = sorted(tracks_2, key=lambda x: (x.name, x.program, x.channel, len(x.notes), x.notes["pitch"].sum()))
+        tracks_1 = sorted(tracks_1, key=lambda x: (x.name, x.program, x.channel, len(x.notes), x.notes.pitch.sum()))
+        tracks_2 = sorted(tracks_2, key=lambda x: (x.name, x.program, x.channel, len(x.notes), x.notes.pitch.sum()))
     else:
-        tracks_1 = sorted(tracks_1, key=lambda x: (x.name, x.program, len(x.notes), x.notes["pitch"].sum()))
-        tracks_2 = sorted(tracks_2, key=lambda x: (x.name, x.program, len(x.notes), x.notes["pitch"].sum()))
-    assert score1.tempo.shape == score2.tempo.shape, "Different number of tempo events"
-    assert np.all(score1.tempo["tick"] == score2.tempo["tick"]), "Different tick values for tempo events"
+        tracks_1 = sorted(tracks_1, key=lambda x: (x.name, x.program, len(x.notes), x.notes.pitch.sum()))
+        tracks_2 = sorted(tracks_2, key=lambda x: (x.name, x.program, len(x.notes), x.notes.pitch.sum()))
+    assert score1.tempo.size == score2.tempo.size, "Different number of tempo events"
+    assert np.all(score1.tempo.tick == score2.tempo.tick), "Different tick values for tempo events"
 
-    assert np.allclose(score1.tempo["bpm"], score2.tempo["bpm"], atol=1e-3), "Different bpm values for tempo events"
-    assert np.allclose(score1.tempo["time"], score2.tempo["time"], atol=1e-3), "Different time values for tempo events"
+    assert np.allclose(score1.tempo.bpm, score2.tempo.bpm, atol=1e-3), "Different bpm values for tempo events"
+    assert np.allclose(score1.tempo.time, score2.tempo.time, atol=1e-3), "Different time values for tempo events"
     for track_id, (track1, track2) in enumerate(zip(tracks_1, tracks_2)):
         assert track1.name == track2.name, "Track names are different"
         assert track1.program == track2.program, "Track programs are different"
@@ -1271,65 +1688,65 @@ def assert_scores_equal(
         # sort not by pitch then tick
         # notes1= track1.notes
         # notes2= track2.notes
-        order1 = np.lexsort((np.arange(len(track1.notes)), track1.notes["start_tick"], track1.notes["pitch"]))
+        order1 = np.lexsort((np.arange(len(track1.notes)), track1.notes.start_tick, track1.notes.pitch))
         notes1 = track1.notes[order1]
-        order2 = np.lexsort((np.arange(len(track2.notes)), track2.notes["start_tick"], track2.notes["pitch"]))
+        order2 = np.lexsort((np.arange(len(track2.notes)), track2.notes.start_tick, track2.notes.pitch))
         notes2 = track2.notes[order2]
 
         min_len = min(len(notes1), len(notes2))
-        np.nonzero(notes1[:min_len]["start_tick"] != notes2[:min_len]["start_tick"])
+        np.nonzero(notes1[:min_len].start_tick != notes2[:min_len].start_tick)
         assert len(notes1) == len(notes2), f"Different number of notes in track {track_id}"
         if len(notes1) > 0:
-            assert np.all(notes1["pitch"] == notes2["pitch"]), f"Pitches are different in track {track_id}"
-            max_tick_diff = max(abs(notes1["start_tick"] - notes2["start_tick"]))
+            assert np.all(notes1.pitch == notes2.pitch), f"Pitches are different in track {track_id}"
+            max_tick_diff = max(abs(notes1.start_tick - notes2.start_tick))
             assert max_tick_diff <= tick_tol, f"Tick difference larger than {tick_tol} in track {track_id}"
-            max_duration_tick_diff = max(abs(notes1["duration_tick"] - notes2["duration_tick"]))
+            max_duration_tick_diff = max(abs(notes1.duration_tick - notes2.duration_tick))
             assert max_duration_tick_diff <= tick_tol, (
                 f"Duration tick difference {max_duration_tick_diff} greater than {tick_tol} in track {track_id}"
             )
             # max note time difference
-            max_start_time_diff = max(abs(notes1["start"] - notes2["start"]))
+            max_start_time_diff = max(abs(notes1.start - notes2.start))
             assert max_start_time_diff <= time_tol, (
                 f"Max note start time difference {max_start_time_diff}>{time_tol} in track {track_id}"
             )
-            notes_stop_1 = notes1["start"] + notes1["duration"]
-            notes_stop_2 = notes2["start"] + notes2["duration"]
+            notes_stop_1 = notes1.start + notes1.duration
+            notes_stop_2 = notes2.start + notes2.duration
             max_stop_diff = max(abs(notes_stop_1 - notes_stop_2))
             assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol} in track {track_id}"
             # max note velocity difference
-            velocify_abs_diff = abs(notes1["velocity_on"].astype(np.int16) - notes2["velocity_on"].astype(np.int16))
+            velocify_abs_diff = abs(notes1.velocity.astype(np.int16) - notes2.velocity.astype(np.int16))
             max_velocity_diff = max(velocify_abs_diff)
             assert max_velocity_diff <= value_tol, (
                 f"Max note velocity difference {max_velocity_diff}>{value_tol} in track {track_id}"
             )
             # max note duration difference
-            max_duration_diff = max(abs(notes1["duration"] - notes2["duration"]))
+            max_duration_diff = max(abs(notes1.duration - notes2.duration))
             assert max_duration_diff <= time_tol, (
                 f"Max note duration difference {max_duration_diff}>{time_tol} in track {track_id}"
             )
 
         # max control time difference
-        assert track1.controls.shape == track2.controls.shape, f"Different number of control events in track {track_id}"
+        assert track1.controls.size == track2.controls.size, f"Different number of control events in track {track_id}"
         if track1.controls.size > 0:
-            max_control_time_diff = max(abs(track1.controls["time"] - track2.controls["time"]))
+            max_control_time_diff = max(abs(track1.controls.time - track2.controls.time))
             assert max_control_time_diff <= time_tol, (
                 f"Max control time difference {max_control_time_diff}>{time_tol} in track {track_id}"
             )
             max_diff = max(max_diff, max_control_time_diff)
         # max pedal time difference
-        assert track1.pedals.shape == track2.pedals.shape, f"Different number of pedal events in track {track_id}"
+        assert track1.pedals.size == track2.pedals.size, f"Different number of pedal events in track {track_id}"
         if track1.pedals.size > 0:
-            max_pedal_time_diff = max(abs(track1.pedals["time"] - track2.pedals["time"]))
+            max_pedal_time_diff = max(abs(track1.pedals.time - track2.pedals.time))
             max_diff = max(max_diff, max_pedal_time_diff)
             assert max_pedal_time_diff <= time_tol, (
                 f"Max pedal time difference {max_pedal_time_diff}>{time_tol} in track {track_id}"
             )
         # max pitch bend time difference
-        assert track1.pitch_bends.shape == track2.pitch_bends.shape, (
+        assert track1.pitch_bends.size == track2.pitch_bends.size, (
             f"Different number of pitch bend events in track {track_id}"
         )
         if track1.pitch_bends.size > 0:
-            max_pitch_bend_time_diff = max(abs(track1.pitch_bends["time"] - track2.pitch_bends["time"]))
+            max_pitch_bend_time_diff = max(abs(track1.pitch_bends.time - track2.pitch_bends.time))
             max_diff = max(max_diff, max_pitch_bend_time_diff)
             assert max_pitch_bend_time_diff <= time_tol, (
                 f"Max pitch bend time difference {max_pitch_bend_time_diff}>{time_tol} in track {track_id}"

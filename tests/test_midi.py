@@ -41,7 +41,7 @@ def test_sort_midi_events() -> None:
         midi_raw = load_midi_score(midi_file)
         sorted_events = sort_midi_events(midi_raw.tracks[0].events)
         sorted_events2 = sort_midi_events(sorted_events)
-        assert np.all(sorted_events == sorted_events2)
+        assert np.all(sorted_events._data == sorted_events2._data)
 
 
 def collect_lakh_dataset_failure_cases(compare_to_symusic: bool = False) -> None:

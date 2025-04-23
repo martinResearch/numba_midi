@@ -11,11 +11,16 @@ from numba_midi.score import (
     check_no_overlapping_notes,
     check_no_overlapping_notes_in_score,
     control_dtype,
+    ControlArray,
     note_dtype,
+    NoteArray,
     pedal_dtype,
+    PedalArray,
     pitch_bend_dtype,
+    PitchBendArray,
     Score,
     tempo_dtype,
+    TempoArray,
     times_to_ticks,
     Track,
 )
@@ -38,7 +43,7 @@ class PianoRoll:
     notated_32nd_notes_per_beat: int = 8
     midi_track_ids: Optional[list[int | None]] = None
     channels: Optional[list[int | None]] = None
-    tempo: Optional[np.ndarray] = None
+    tempo: Optional[TempoArray] = None
 
     @property
     def duration(self) -> float:
@@ -167,10 +172,10 @@ def score_to_piano_roll(
     for track_id, track in enumerate(score.tracks):
         _add_notes_to_piano_roll_jit(
             piano_roll=piano_roll[track_id],
-            pitch=track.notes["pitch"],
-            start=track.notes["start"],
-            duration=track.notes["duration"],
-            velocity=track.notes["velocity_on"],
+            pitch=track.notes.pitch,
+            start=track.notes.start,
+            duration=track.notes.duration,
+            velocity=track.notes.velocity,
             time_step=time_step,
             pitch_min=pitch_min,
             pitch_max=pitch_max,
@@ -260,7 +265,7 @@ def piano_roll_to_score(
 
     if piano_roll.tempo is None:
         # default tempo is 120 BPM
-        tempo = np.array([(0, 0, 120)], dtype=tempo_dtype)
+        tempo = TempoArray(np.array([(0, 0, 120)], dtype=tempo_dtype))
     else:
         tempo = piano_roll.tempo
     for track_id in range(piano_roll_semitone.shape[0]):
@@ -276,29 +281,29 @@ def piano_roll_to_score(
         midi_track_id = piano_roll.midi_track_ids[track_id] if piano_roll.midi_track_ids is not None else None
 
         # Create the structured array
-        notes = np.empty(len(start), dtype=note_dtype)
+        notes = NoteArray(np.empty(len(start), dtype=note_dtype))
 
         # Assign values to the fields
-        notes["start"] = start
-        notes["duration"] = duration
-        notes["pitch"] = pitch
-        notes["velocity_on"] = velocity
+        notes.start = start
+        notes.duration = duration
+        notes.pitch = pitch
+        notes.velocity = velocity
 
-        controls = np.array([], dtype=control_dtype)
-        pedals = np.array([], dtype=pedal_dtype)
+        controls = ControlArray(np.array([], dtype=control_dtype))
+        pedals = PedalArray(np.array([], dtype=pedal_dtype))
 
-        pitch_bends = np.array([], dtype=pitch_bend_dtype)
+        pitch_bends = PitchBendArray(np.array([], dtype=pitch_bend_dtype))
 
         if piano_roll.ticks_per_quarter is None:
             ticks_per_quarter = 480
         else:
             ticks_per_quarter = piano_roll.ticks_per_quarter
 
-        notes["start_tick"] = times_to_ticks(notes["start"], tempo, ticks_per_quarter).astype(np.int32)
+        notes.start_tick = times_to_ticks(notes.start, tempo, ticks_per_quarter).astype(np.int32)
 
-        notes_ends = notes["start"] + notes["duration"]
+        notes_ends = notes.start + notes.duration
         notes_ends_tick = times_to_ticks(notes_ends, tempo, ticks_per_quarter).astype(np.int32)
-        notes["duration_tick"] = notes_ends_tick - notes["start_tick"]
+        notes.duration_tick = notes_ends_tick - notes.start_tick
         check_no_overlapping_notes(notes)
         track = Track(
             program=program,

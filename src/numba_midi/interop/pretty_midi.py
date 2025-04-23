@@ -5,11 +5,15 @@ import pretty_midi
 
 from numba_midi.score import (
     control_dtype,
+    ControlArray,
     get_pedals_from_controls,
     note_dtype,
+    NoteArray,
     pitch_bend_dtype,
+    PitchBendArray,
     Score,
     tempo_dtype,
+    TempoArray,
     Track,
 )
 
@@ -18,29 +22,29 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     """Convert a PrettyMIDI object to a Score object."""
     tracks = []
     for _, instrument in enumerate(midi.instruments):
-        notes = np.empty(len(instrument.notes), dtype=note_dtype)
+        notes = NoteArray(np.empty(len(instrument.notes), dtype=note_dtype))
         for note_id, note in enumerate(instrument.notes):
-            notes[note_id]["start"] = note.start
+            notes.start[note_id] = note.start
             start_tick = midi.time_to_tick(note.start)
-            notes[note_id]["start_tick"] = start_tick
-            notes[note_id]["duration"] = note.end - note.start
+            notes.start_tick[note_id]  = start_tick
+            notes.duration[note_id]  = note.end - note.start
             end_tick = midi.time_to_tick(note.end)
-            notes[note_id]["duration_tick"] = end_tick - start_tick
-            notes[note_id]["pitch"] = note.pitch
-            notes[note_id]["velocity_on"] = note.velocity
+            notes.duration_tick[note_id]  = end_tick - start_tick
+            notes.pitch[note_id]  = note.pitch
+            notes.velocity[note_id]  = note.velocity
 
-        pitch_bends = np.empty(len(instrument.pitch_bends), dtype=pitch_bend_dtype)
+        pitch_bends = PitchBendArray(np.empty(len(instrument.pitch_bends), dtype=pitch_bend_dtype))
         for pitch_bend_id, pitch_bend in enumerate(instrument.pitch_bends):
-            pitch_bends[pitch_bend_id]["time"] = pitch_bend.time
-            pitch_bends[pitch_bend_id]["value"] = pitch_bend.pitch
-            pitch_bends[pitch_bend_id]["tick"] = midi.time_to_tick(pitch_bend.time)
+            pitch_bends.time[pitch_bend_id] = pitch_bend.time
+            pitch_bends.value [pitch_bend_id]= pitch_bend.pitch
+            pitch_bends.tick[pitch_bend_id] = midi.time_to_tick(pitch_bend.time)
 
-        controls = np.empty(len(instrument.control_changes), dtype=control_dtype)
+        controls = ControlArray(np.empty(len(instrument.control_changes), dtype=control_dtype))
         for control_id, control in enumerate(instrument.control_changes):
-            controls[control_id]["time"] = control.time
-            controls[control_id]["value"] = control.value
-            controls[control_id]["tick"] = midi.time_to_tick(control.time)
-            controls[control_id]["number"] = control.number
+            controls.time[control_id] = control.time
+            controls.value[control_id] = control.value
+            controls.tick[control_id] = midi.time_to_tick(control.time)
+            controls.number[control_id] = control.number
 
         pedals = get_pedals_from_controls(controls)
         track = Track(
@@ -66,15 +70,15 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
         denominator = 4
     ticks_per_quarter = midi.resolution
     tempo_change_times, tempi = midi.get_tempo_changes()
-    tempo = np.empty(len(tempo_change_times), dtype=tempo_dtype)
+    tempo = TempoArray(np.empty(len(tempo_change_times), dtype=tempo_dtype))
 
     clocks_per_click = 0  # Looks like we don't have this information in pretty_midi
     notated_32nd_notes_per_beat = 0  # Looks like we don't have this information in pretty_midi
 
-    tempo["time"] = tempo_change_times
-    tempo["bpm"] = tempi
+    tempo.time = tempo_change_times
+    tempo.bpm = tempi
     # 60.0/(midi._tick_scales[0][1]*midi.resolution)
-    tempo["tick"] = [midi.time_to_tick(t) for t in tempo_change_times]
+    tempo.tick = np.array([midi.time_to_tick(t) for t in tempo_change_times])
 
     score = Score(
         tracks=tracks,
@@ -97,8 +101,8 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
     for tempo in score.tempo:
         # look like pretty_midi does not have a way to set the tempo changes
         # through its exposed API
-        tick_scale = 60.0 / (tempo["bpm"] * midi.resolution)
-        midi._tick_scales.append((int(tempo["tick"]), tick_scale))
+        tick_scale = 60.0 / (tempo.bpm * midi.resolution)
+        midi._tick_scales.append((int(tempo.tick), tick_scale))
     # Create list that maps ticks to time in seconds
     midi._update_tick_to_time(score.last_tick())
 
@@ -111,25 +115,25 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
         for note in track.notes:
             instrument.notes.append(
                 pretty_midi.Note(
-                    velocity=note["velocity_on"],
-                    pitch=note["pitch"],
-                    start=note["start"],
-                    end=note["start"] + note["duration"],
+                    velocity=note.velocity,
+                    pitch=note.pitch,
+                    start=note.start,
+                    end=note.start + note.duration,
                 )
             )
         for control in track.controls:
             instrument.control_changes.append(
                 pretty_midi.ControlChange(
-                    number=control["number"],
-                    value=control["value"],
-                    time=control["time"],
+                    number=control.number,
+                    value=control.value,
+                    time=control.time,
                 )
             )
         for pitch_bend in track.pitch_bends:
             instrument.pitch_bends.append(
                 pretty_midi.PitchBend(
-                    pitch=pitch_bend["value"],
-                    time=pitch_bend["time"],
+                    pitch=pitch_bend.value,
+                    time=pitch_bend.time,
                 )
             )
         midi.instruments.append(instrument)

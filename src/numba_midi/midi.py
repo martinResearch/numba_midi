@@ -26,6 +26,12 @@ class EventArray:
             raise ValueError("Invalid dtype for ControlArray")
         self._data = data
 
+    @classmethod
+    def zeros(cls, size: int) -> "EventArray":
+        """Create a new EventArray with zeros."""
+        data = np.zeros(size, dtype=event_dtype)
+        return cls(data)
+
     @property
     def tick(self) -> np.ndarray:
         return self._data["tick"]

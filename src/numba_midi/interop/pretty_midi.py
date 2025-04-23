@@ -26,17 +26,17 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
         for note_id, note in enumerate(instrument.notes):
             notes.start[note_id] = note.start
             start_tick = midi.time_to_tick(note.start)
-            notes.start_tick[note_id]  = start_tick
-            notes.duration[note_id]  = note.end - note.start
+            notes.start_tick[note_id] = start_tick
+            notes.duration[note_id] = note.end - note.start
             end_tick = midi.time_to_tick(note.end)
-            notes.duration_tick[note_id]  = end_tick - start_tick
-            notes.pitch[note_id]  = note.pitch
-            notes.velocity[note_id]  = note.velocity
+            notes.duration_tick[note_id] = end_tick - start_tick
+            notes.pitch[note_id] = note.pitch
+            notes.velocity[note_id] = note.velocity
 
         pitch_bends = PitchBendArray(np.empty(len(instrument.pitch_bends), dtype=pitch_bend_dtype))
         for pitch_bend_id, pitch_bend in enumerate(instrument.pitch_bends):
             pitch_bends.time[pitch_bend_id] = pitch_bend.time
-            pitch_bends.value [pitch_bend_id]= pitch_bend.pitch
+            pitch_bends.value[pitch_bend_id] = pitch_bend.pitch
             pitch_bends.tick[pitch_bend_id] = midi.time_to_tick(pitch_bend.time)
 
         controls = ControlArray(np.empty(len(instrument.control_changes), dtype=control_dtype))

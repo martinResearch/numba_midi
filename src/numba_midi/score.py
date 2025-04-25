@@ -3,7 +3,7 @@
 from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generator, Iterable, Literal, Optional, TYPE_CHECKING, overload
+from typing import Any, Generator, Iterable, Literal, Optional, overload, TYPE_CHECKING
 
 import numpy as np
 
@@ -174,13 +174,11 @@ class NoteArray:
         self._data["pitch"][:] = value
 
     @overload
-    def __getitem__(self, index: int) -> Note:
-        ...
+    def __getitem__(self, index: int) -> Note: ...
     @overload
-    def __getitem__(self, index: np.ndarray|slice|list[int]) -> "NoteArray":
-        ...
+    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "NoteArray": ...
 
-    def __getitem__(self, index: int | slice | np.ndarray|list[int]) -> "NoteArray|Note":
+    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "NoteArray|Note":
         if isinstance(index, int):
             result = self._data[index]
             return Note(
@@ -217,8 +215,10 @@ class NoteArray:
                 self.pitch[i],
                 self.velocity[i],
             )
+
     def __repr__(self) -> str:
         return f"NoteArray(size={self.size})"
+
 
 @dataclass
 class Control:
@@ -315,21 +315,19 @@ class ControlArray:
         self._data["value"][:] = value
 
     @overload
-    def __getitem__(self, index: int) -> Control:
-        ...
+    def __getitem__(self, index: int) -> Control: ...
     @overload
-    def __getitem__(self, index: np.ndarray|slice|list[int]) -> "ControlArray":
-        ...
+    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "ControlArray": ...
 
-    def __getitem__(self, index: int | slice | np.ndarray|list[int]) -> "ControlArray|Control":
+    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "ControlArray|Control":
         if isinstance(index, int):
-                    result = self._data[index]
-                    return Control(
-                        float(result["time"]),
-                        int(result["tick"]),
-                        int(result["number"]),
-                        int(result["value"]),
-                    )
+            result = self._data[index]
+            return Control(
+                float(result["time"]),
+                int(result["tick"]),
+                int(result["number"]),
+                int(result["value"]),
+            )
         result = self._data[index]
         return ControlArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
@@ -452,13 +450,11 @@ class PedalArray:
         self._data["duration_tick"][:] = value
 
     @overload
-    def __getitem__(self, index: int) -> Pedal:
-        ...
+    def __getitem__(self, index: int) -> Pedal: ...
     @overload
-    def __getitem__(self, index: np.ndarray|slice|list[int]) -> "PedalArray":
-        ...
+    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "PedalArray": ...
 
-    def __getitem__(self, index: int | slice | np.ndarray|list[int]) -> "PedalArray|Pedal":
+    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "PedalArray|Pedal":
         if isinstance(index, int):
             result = self._data[index]
             return Pedal(
@@ -574,13 +570,11 @@ class PitchBendArray:
         self._data["value"][:] = value
 
     @overload
-    def __getitem__(self, index: int) -> PitchBend:
-        ...
+    def __getitem__(self, index: int) -> PitchBend: ...
     @overload
-    def __getitem__(self, index: np.ndarray|slice|list[int]) -> "PitchBendArray":
-        ...
+    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "PitchBendArray": ...
 
-    def __getitem__(self, index: int | slice | np.ndarray|list[int]) -> "PitchBendArray|PitchBend":
+    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "PitchBendArray|PitchBend":
         if isinstance(index, int):
             result = self._data[index]
             return PitchBend(
@@ -697,13 +691,11 @@ class TempoArray:
         self._data["bpm"][:] = value
 
     @overload
-    def __getitem__(self, index: int) -> Tempo:
-        ...
+    def __getitem__(self, index: int) -> Tempo: ...
     @overload
-    def __getitem__(self, index: np.ndarray|slice|list[int]) -> "TempoArray":
-        ...
+    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "TempoArray": ...
 
-    def __getitem__(self, index: int | slice | np.ndarray|list[int]) -> "TempoArray|Tempo":
+    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "TempoArray|Tempo":
         if isinstance(index, int):
             result = self._data[index]
             return Tempo(

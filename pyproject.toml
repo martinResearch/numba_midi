@@ -13,7 +13,7 @@ name = "numba_midi"
 version = "0.1.7"
 description = "numba-accelerated python midi score processing library."
 authors = [{ name = "Martin de La Gorce" }]
-dependencies = ["numba>=0.61","numpy", "pillow"]
+dependencies = ["numba>=0.61","numpy"]
 readme = "README.md"
 license = {text = "MIT"}
 

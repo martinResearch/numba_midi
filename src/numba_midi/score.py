@@ -192,6 +192,10 @@ class NoteArray:
         result = self._data[index]
         return NoteArray.from_array(result)  # Return new wrapper for slices or boolean arrays
 
+    def delete(self, index: int | slice | np.ndarray) -> None:
+        """Delete notes at the specified index."""
+        self._data = np.delete(self._data, index, axis=0)
+
     def __setitem__(self, index: int | slice | np.ndarray, value: "NoteArray") -> None:
         self._data[index] = value._data
 

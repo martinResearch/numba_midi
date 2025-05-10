@@ -62,10 +62,10 @@ class Note:
     velocity: int
 
     def __post_init__(self) -> None:
-        assert self.start >= 0, "Start time must be non-negative"
-        assert self.start_tick >= 0, "Start tick must be non-negative"
-        assert self.duration > 0, "Duration must be positive"
-        assert self.duration_tick > 0, "Duration tick must be positive"
+        assert self.start >= 0, "Start time must be non-negative. Value is {self.start}"
+        assert self.start_tick >= 0, "Start tick must be non-negative. Value is {self.start_tick}"
+        assert self.duration > 0, "Duration must be positive. Value is {self.duration}"
+        assert self.duration_tick > 0, f"Duration tick must be positive. Value is {self.duration_tick}"
         assert 0 <= self.pitch < 128, "Pitch must be between 0 and 127"
         assert 0 <= self.velocity <= 127, "Velocity must be between 0 and 127"
 
@@ -755,6 +755,19 @@ class Track:
             "Pitch bends must be a structured numpy array with pitch_bend_dtype elements"
         )
 
+    @classmethod
+    def empty(cls, program: int, is_drum: bool, name: str) -> "Track":
+        """Create an empty track."""
+        return Track(
+            program=program,
+            is_drum=is_drum,
+            name=name,
+            notes=NoteArray.zeros(0),
+            controls=ControlArray.zeros(0),
+            pedals=PedalArray.zeros(0),
+            pitch_bends=PitchBendArray.zeros(0),
+        )
+
     def last_tick(self) -> int:
         """Get the last tick of the track."""
         last_tick = 0
@@ -806,7 +819,8 @@ class Score:
 
     def last_tick(self) -> int:
         """Get the last tick of the score."""
-        last_tick = max(track.last_tick() for track in self.tracks)
+        # last_tick = max(track.last_tick() for track in self.tracks)
+        last_tick = int(self.time_to_tick(self.duration))
         return last_tick
 
     def __post_init__(self) -> None:
@@ -859,13 +873,13 @@ class Score:
         """Save the score to a MIDI file."""
         save_score_to_midi(self, str(file_path))
 
-    def time_to_tick(self, time: float) -> int:
+    def time_to_tick(self, time: float) -> float:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
 
     def times_to_ticks(self, times: np.ndarray) -> np.ndarray:
         return times_to_ticks(times, self.tempo, self.ticks_per_quarter)
 
-    def tick_to_time(self, tick: int) -> float:
+    def tick_to_time(self, tick: float) -> float:
         return tick_to_time(tick, self.tempo, self.ticks_per_quarter)
 
     def ticks_to_times(self, ticks: np.ndarray) -> np.ndarray:
@@ -876,7 +890,7 @@ class Score:
         start: np.ndarray,
         pitch: np.ndarray,
         duration: np.ndarray,
-        velocity_on: np.ndarray,
+        velocity: np.ndarray,
         round_tick: bool = True,
     ) -> NoteArray:
         """Create notes from start, pitch and duration."""
@@ -897,11 +911,11 @@ class Score:
         notes.duration = duration
         notes.duration_tick = duration_ticks
         notes.pitch = pitch
-        notes.velocity = velocity_on
+        notes.velocity = velocity
         return notes
 
     def create_note(
-        self, start: float, pitch: int, duration: float, velocity_on: int, round_tick: bool = True
+        self, start: float, pitch: int, duration: float, velocity: int, round_tick: bool = True
     ) -> NoteArray:
         """Create a note from start, pitch and duration."""
         notes = NoteArray.zeros(1)
@@ -919,7 +933,7 @@ class Score:
         notes.duration[:] = duration
         notes.duration_tick[:] = duration_ticks
         notes.pitch[:] = pitch
-        notes.velocity[:] = velocity_on
+        notes.velocity[:] = velocity
         return notes
 
     def without_empty_tracks(self) -> "Score":
@@ -931,6 +945,26 @@ class Score:
 
     def select_tracks(self, track_ids: list[int]) -> "Score":
         return select_tracks(self, track_ids)
+
+    def add_track(self, track: Track) -> None:
+        """Add a track to the score."""
+        assert isinstance(track, Track), "Track must be a Track object"
+        self.tracks.append(track)
+
+    def remove_track(self, track_id: int) -> None:
+        """Delete a track from the score."""
+        assert 0 <= track_id < len(self.tracks), "Track ID out of range"
+        del self.tracks[track_id]
+
+    def add_empty_track(self, name: str, program: int, is_drum: bool = False) -> None:
+        """Add an empty track to the score."""
+        assert 0 <= program < 128, "Program must be between 0 and 127"
+        notes = NoteArray.zeros(0)
+        controls = ControlArray.zeros(0)
+        pedals = PedalArray.zeros(0)
+        pitch_bends = PitchBendArray.zeros(0)
+        track = Track(program, is_drum, name, notes, controls, pedals, pitch_bends)
+        self.tracks.append(track)
 
     def add_notes(
         self, track_id: int, time: np.ndarray, duration: np.ndarray, pitch: np.ndarray, velocity: np.ndarray
@@ -1026,6 +1060,14 @@ class Score:
         beats = beat_ticks / ticks_per_beat
         return beats
 
+    def time_to_beat(self, time: float) -> float:
+        """Convert time to beat."""
+        assert time >= 0, "Time must be non-negative"
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
+        beat_ticks = self.time_to_tick(time)
+        beats = beat_ticks / ticks_per_beat
+        return beats
+
     @property
     def ticks_per_beat(self) -> float:
         return self.ticks_per_quarter * 4 // self.time_signature[1]
@@ -1036,6 +1078,14 @@ class Score:
     def beats_to_times(self, beats: np.ndarray) -> np.ndarray:
         """Convert beats to time."""
         return self.ticks_to_times(self.beats_to_ticks(beats))
+
+    def beat_to_time(self, beat: float) -> float:
+        """Convert a beat to time."""
+        return self.tick_to_time(self.beat_to_tick(beat))
+
+    def beat_to_tick(self, beat: float) -> int:
+        """Convert a beat to tick."""
+        return int(beat * self.ticks_per_beat)
 
     def quantize_times(self, times: np.ndarray, step: float) -> np.ndarray:
         """Quantize the score to the given time step in beat units."""
@@ -1695,7 +1745,7 @@ def check_no_overlapping_notes_in_score(score: Score) -> None:
         check_no_overlapping_notes(track.notes)
 
 
-def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> int:
+def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> float:
     """Convert a time in seconds to tick."""
     # get the tempo at the start of the time range
     tempo_idx: int = 0
@@ -1708,10 +1758,10 @@ def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> int:
     ref_time = tempo.time[tempo_idx]
     quarter_per_second = bpm / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
-    return int(ref_ticks + (time - ref_time) * ticks_per_second)
+    return ref_ticks + (time - ref_time) * ticks_per_second
 
 
-def tick_to_time(tick: int, tempo: TempoArray, ticks_per_quarter: int) -> float:
+def tick_to_time(tick: float, tempo: TempoArray, ticks_per_quarter: int) -> float:
     """Convert a tick to time in seconds."""
     # get the tempo at the start of the time range
     tempo_idx = np.searchsorted(tempo.tick, tick, side="right") - 1
@@ -1811,6 +1861,8 @@ def crop_score(score: Score, start: float, end: float) -> Score:
         new_notes.duration_tick = new_notes_end_tick - new_notes.start_tick
 
         assert np.all(new_notes_end <= end - start), "Note end time exceeds score duration"
+        # remove note with duration 0
+        new_notes = new_notes[new_notes.duration_tick > 0]
 
         pedals_end = track.pedals.time + track.pedals.duration
         pedals_keep = (track.pedals.time < end) & (pedals_end > start)

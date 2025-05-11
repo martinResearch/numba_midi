@@ -1,3 +1,2 @@
-uv venv venv
-call venv\Scripts\activate
-uv pip sync requirements.txt --python 3.11
+uv venv
+uv sync --all-extras

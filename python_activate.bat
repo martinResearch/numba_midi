@@ -1,1 +1,1 @@
-%~dp0/venv/Scripts/activate
+%~dp0/.venv/Scripts/activate

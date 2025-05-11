@@ -1,6 +1,6 @@
 """Music score represention based on structured numpy arrays."""
 
-from copy import copy
+from copy import copy, deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator, Iterable, Literal, Optional, overload, TYPE_CHECKING
@@ -48,6 +48,9 @@ pedal_dtype = np.dtype(
 )
 pitch_bend_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("value", np.int32)])
 tempo_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("bpm", np.float64)])
+
+
+DRUM_CHANNEL = 9  # Midi convention
 
 
 @dataclass
@@ -874,17 +877,17 @@ class Score:
         save_score_to_midi(self, str(file_path))
 
     @classmethod
-    def load(cls, 
-            file_path: str | Path,
-            notes_mode: NotesMode = "note_off_stops_all",
-            minimize_tempo: bool = True,
-            check_round_trip: bool = False
-        ) -> "Score":
+    def load(
+        cls,
+        file_path: str | Path,
+        notes_mode: NotesMode = "note_off_stops_all",
+        minimize_tempo: bool = True,
+        check_round_trip: bool = False,
+    ) -> "Score":
         """Load a score from a MIDI file."""
-        return load_score(str(file_path),
-                          notes_mode=notes_mode,
-                          minimize_tempo=minimize_tempo,
-                          check_round_trip=check_round_trip)
+        return load_score(
+            str(file_path), notes_mode=notes_mode, minimize_tempo=minimize_tempo, check_round_trip=check_round_trip
+        )
 
     def time_to_tick(self, time: float) -> float:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
@@ -1232,7 +1235,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     lyrics = sorted(lyrics, key=lambda x: x[0])
 
     for midi_track_id, midi_track in enumerate(midi_score.tracks):
-        
         if midi_track.events.size == 0:
             continue
         # if only tempo events, skip the track
@@ -1353,7 +1355,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
                 channel=int(track_channel),
                 midi_track_id=midi_track_id,
                 program=int(track_program),
-                is_drum=track_channel==9,  # FIXME
+                is_drum=track_channel == 9,  # FIXME
                 name=midi_track.name,
                 notes=notes_np,
                 controls=channels_controls[track_channel],
@@ -1573,15 +1575,15 @@ def save_score_to_midi(score: Score, file_path: str, check_round_trip: bool = Tr
 
 
 def merge_non_overlapping_tracks(score: Score) -> Score:
-    """Merge non overlapping tracks with same program into one track.
-    
+    """Merge non overlapping tracks with same program into one track when possible.
+
     This is useful to reduce the number of tracks in the score when using
-    synthizers limited to 16 tracks.
+    MIDI soundfont synthetizers limited to 16 channels for example.
     """
-    new_tracks=[]
-    for track_id, track in enumerate(score.tracks):
-        merged=False        
-        for new_track_id, new_track in enumerate(new_tracks):
+    new_tracks: list[Track] = []
+    for track in score.tracks:
+        merged = False
+        for new_track in new_tracks:
             if new_track.program == track.program and new_track.is_drum == track.is_drum:
                 # tick of control does not matter before the first note
                 first_note_tick = min(
@@ -1591,7 +1593,10 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
                 # check controls pedals and pitch_bends are identical if not continue
                 if not len(new_track.controls) == len(track.controls):
                     continue
-                if not np.allclose(np.clip(new_track.controls.tick,first_note_tick,None), np.clip(track.controls.tick,first_note_tick,None) ):
+                if not np.allclose(
+                    np.clip(new_track.controls.tick, first_note_tick, None),
+                    np.clip(track.controls.tick, first_note_tick, None),
+                ):
                     continue
                 if not np.array_equal(new_track.controls.value, track.controls.value):
                     continue
@@ -1606,15 +1611,15 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
                 if len(overlapping_notes) > 0:
                     # there are overlapping notes, skip the merge
                     continue
-                                
+
                 # we can merge the tracks without loss
                 new_track.notes = NoteArray.concatenate((new_track.notes, track.notes))
 
-                merged=True
+                merged = True
                 break
         if not merged:
             # add the track to the new tracks
-            new_tracks.append(track)
+            new_tracks.append(deepcopy(track))
 
     new_score = Score(
         tracks=new_tracks,
@@ -1627,6 +1632,32 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
         lyrics=score.lyrics,
     )
     return new_score
+
+
+def reattribute_midi_channels(score: Score) -> None:
+    """Attribute channels to tracks with constrain on the drum tracks."""
+    if len(score.tracks) > 16:
+        raise ValueError("MIDI only supports 16 channels.")
+
+    available_channels = [i for i in range(16)]
+    # the channel 9 is reserved for drums
+    available_channels.remove(DRUM_CHANNEL)
+
+    dum_channel_used = False
+
+    for track in score.tracks:
+        if track.is_drum:
+            track.channel = DRUM_CHANNEL
+            if dum_channel_used:
+                raise ValueError("Drum channel already used")
+            dum_channel_used = True
+        else:
+            if len(available_channels) == 0:
+                raise ValueError("No available channels left")
+            if track.channel in available_channels:
+                available_channels.remove(track.channel)
+            else:
+                track.channel = available_channels.pop(0)
 
 
 def filter_instruments(score: Score, instrument_names: list[str]) -> Score:

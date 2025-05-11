@@ -2000,7 +2000,7 @@ def distance(score1: Score, score2: Score, sort_tracks_with_programs: bool = Fal
     if sort_tracks_with_programs:
         tracks_1 = sorted(tracks_1, key=lambda x: x.program)
         tracks_2 = sorted(tracks_2, key=lambda x: x.program)
-    for track1, track2 in zip(tracks_1, tracks_2):
+    for track1, track2 in zip(tracks_1, tracks_2, strict=False):
         print("Programs", track1.program, track2.program)
         # print("Notes", track1.notes.shape, track2.notes.shape)
         print("Controls", track1.controls.size, track2.controls.size)
@@ -2055,7 +2055,7 @@ def assert_scores_equal(
 
     assert np.allclose(score1.tempo.bpm, score2.tempo.bpm, atol=1e-3), "Different bpm values for tempo events"
     assert np.allclose(score1.tempo.time, score2.tempo.time, atol=1e-3), "Different time values for tempo events"
-    for track_id, (track1, track2) in enumerate(zip(tracks_1, tracks_2)):
+    for track_id, (track1, track2) in enumerate(zip(tracks_1, tracks_2, strict=False)):
         assert track1.name == track2.name, "Track names are different"
         assert track1.program == track2.program, "Track programs are different"
         if compare_channels:

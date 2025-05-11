@@ -20,7 +20,7 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
     score_ticks = symusic_score.to(symusic.TimeUnit.tick)
     score_seconds = symusic_score.to(symusic.TimeUnit.second)
 
-    for _, (track_ticks, track_secs) in enumerate(zip(score_ticks.tracks, score_seconds.tracks)):
+    for _, (track_ticks, track_secs) in enumerate(zip(score_ticks.tracks, score_seconds.tracks, strict=False)):
         notes = NoteArray.zeros(len(track_ticks.notes))
         track_ticks_notes_numpy = track_ticks.notes.numpy()
         track_secs_notes_numpy = track_secs.notes.numpy()

@@ -579,7 +579,7 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
     """Check if two midi files are equal."""
     assert midi1.ticks_per_quarter == midi2.ticks_per_quarter
     assert len(midi1.tracks) == len(midi2.tracks)
-    for track1, track2 in zip(midi1.tracks, midi2.tracks):
+    for track1, track2 in zip(midi1.tracks, midi2.tracks, strict=False):
         sorted_events1 = sort_midi_events(track1.events)
         sorted_events2 = sort_midi_events(track2.events)
         assert track1.name == track2.name

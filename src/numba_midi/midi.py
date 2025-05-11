@@ -227,14 +227,28 @@ def unpack_uint8_pair(data: bytes) -> tuple[int, int]:
     """Unpacks two 1-byte unsigned integers."""
     return data[0], data[1]
 
-
 @njit(cache=True, boundscheck=False)
 def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
     """Unpacks three 2-byte unsigned integers (big-endian)."""
     return (data[0] << 8) | data[1], (data[2] << 8) | data[3], (data[4] << 8) | data[5]
 
+@njit(cache=True, boundscheck=False)
+def decode_pitch_bend(data:bytes) -> int:
+    assert 0 <= data[0] <= 127
+    assert 0 <=  data[1] <= 127
+    unsigned = ( data[1]  << 7) | data[0]
+    return unsigned - 8192
 
-@njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=False)
+def encode_pitchbend(value: int) -> tuple[int, int]:
+    """Encodes a pitch bend value to two bytes."""
+    assert -8192 <= value <= 8191, "Pitch bend value out of range"
+    unsigned = value + 8192
+    byte1 = unsigned & 0x7F
+    byte2 = (unsigned >> 7) & 0x7F
+    return byte1, byte2
+
+#@njit(cache=True, boundscheck=True)
 def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):
@@ -334,6 +348,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
                 midi_events.append((tick, 1, channel, pitch, velocity))
+
             elif message_type == 0xB:  # Control Change
                 number, value = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
@@ -343,8 +358,10 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 midi_events.append((tick, 4, channel, data[offset], 0))
                 offset += 1
 
-            elif message_type == 0xE:
-                midi_events.append((tick, 2, channel, data[offset], 0))
+            elif message_type == 0xE:  # Pitch Bend
+                value = decode_pitch_bend(data[offset : offset + 2])
+                assert value >= -8192 and value <= 8191, "Pitch bend value out of range"                
+                midi_events.append((tick, 2, channel, value, 0))
                 offset += 2
 
             elif message_type == 0xA:  # Polyphonic Aftertouch
@@ -513,7 +530,8 @@ def _encode_midi_track_numba(
             data.extend([0x80 | channel, value1, value2])
         elif event_type == 2:
             # Pitch Bend
-            data.extend([0xE0 | channel, value1, 0])
+            d = encode_pitchbend(value1)
+            data.extend([0xE0 | channel, d[0], d[1]])
         elif event_type == 3:
             # Control Change
             data.extend([0xB0 | channel, value1, value2])

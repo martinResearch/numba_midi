@@ -873,6 +873,19 @@ class Score:
         """Save the score to a MIDI file."""
         save_score_to_midi(self, str(file_path))
 
+    @classmethod
+    def load(cls, 
+            file_path: str | Path,
+            notes_mode: NotesMode = "note_off_stops_all",
+            minimize_tempo: bool = True,
+            check_round_trip: bool = False
+        ) -> "Score":
+        """Load a score from a MIDI file."""
+        return load_score(str(file_path),
+                          notes_mode=notes_mode,
+                          minimize_tempo=minimize_tempo,
+                          check_round_trip=check_round_trip)
+
     def time_to_tick(self, time: float) -> float:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
 
@@ -1219,6 +1232,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     lyrics = sorted(lyrics, key=lambda x: x[0])
 
     for midi_track_id, midi_track in enumerate(midi_score.tracks):
+        
         if midi_track.events.size == 0:
             continue
         # if only tempo events, skip the track
@@ -1339,7 +1353,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
                 channel=int(track_channel),
                 midi_track_id=midi_track_id,
                 program=int(track_program),
-                is_drum=False,  # FIXME
+                is_drum=track_channel==9,  # FIXME
                 name=midi_track.name,
                 notes=notes_np,
                 controls=channels_controls[track_channel],
@@ -1558,36 +1572,52 @@ def save_score_to_midi(score: Score, file_path: str, check_round_trip: bool = Tr
     save_midi_file(midi_score, file_path)
 
 
-def merge_tracks_with_same_program(score: Score) -> Score:
-    # merge tracks with the same program
-    tracks_dict: dict[int, Track] = {}
-    for track in score.tracks:
-        if track.program not in tracks_dict:
-            tracks_dict[track.program] = track
-        else:
-            tracks_dict[track.program].notes = NoteArray.concatenate((tracks_dict[track.program].notes, track.notes))
-            tracks_dict[track.program].controls = ControlArray.concatenate(
-                (tracks_dict[track.program].controls, track.controls)
-            )
-            tracks_dict[track.program].pedals = PedalArray.concatenate(
-                (tracks_dict[track.program].pedals, track.pedals)
-            )
-            tracks_dict[track.program].pitch_bends = PitchBendArray.concatenate(
-                (tracks_dict[track.program].pitch_bends, track.pitch_bends)
-            )
+def merge_non_overlapping_tracks(score: Score) -> Score:
+    """Merge non overlapping tracks with same program into one track.
+    
+    This is useful to reduce the number of tracks in the score when using
+    synthizers limited to 16 tracks.
+    """
+    new_tracks=[]
+    for track_id, track in enumerate(score.tracks):
+        merged=False        
+        for new_track_id, new_track in enumerate(new_tracks):
+            if new_track.program == track.program and new_track.is_drum == track.is_drum:
+                # tick of control does not matter before the first note
+                first_note_tick = min(
+                    np.min(new_track.notes.start_tick),
+                    np.min(track.notes.start_tick),
+                )
+                # check controls pedals and pitch_bends are identical if not continue
+                if not len(new_track.controls) == len(track.controls):
+                    continue
+                if not np.allclose(np.clip(new_track.controls.tick,first_note_tick,None), np.clip(track.controls.tick,first_note_tick,None) ):
+                    continue
+                if not np.array_equal(new_track.controls.value, track.controls.value):
+                    continue
+                if not np.array_equal(new_track.pedals._data, track.pedals._data):
+                    continue
+                if not np.array_equal(new_track.pitch_bends._data, track.pitch_bends._data):
+                    continue
 
-    # sort the note, control, pedal and pitch_bend arrays
-    for _, track in tracks_dict.items():
-        track.notes._data = np.sort(track.notes._data, order="start")
-        track.controls._data = np.sort(track.controls._data, order="time")
-        track.pedals._data = np.sort(track.pedals._data, order="time")
-        track.pitch_bends._data = np.sort(track.pitch_bends._data, order="time")
-    # sort tracks by program
-    tracks = list(tracks_dict.values())
-    tracks.sort(key=lambda x: x.program)
+                # check if any note overlaps with the new track
+                combined_notes = NoteArray.concatenate((new_track.notes, track.notes))
+                overlapping_notes = get_overlapping_notes(combined_notes)
+                if len(overlapping_notes) > 0:
+                    # there are overlapping notes, skip the merge
+                    continue
+                                
+                # we can merge the tracks without loss
+                new_track.notes = NoteArray.concatenate((new_track.notes, track.notes))
+
+                merged=True
+                break
+        if not merged:
+            # add the track to the new tracks
+            new_tracks.append(track)
 
     new_score = Score(
-        tracks=tracks,
+        tracks=new_tracks,
         duration=score.duration,
         time_signature=score.time_signature,
         clocks_per_click=score.clocks_per_click,

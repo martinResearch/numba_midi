@@ -197,7 +197,10 @@ class NoteArray:
 
     def delete(self, index: int | slice | np.ndarray) -> None:
         """Delete notes at the specified index."""
-        self._data = np.delete(self._data, index, axis=0)
+        if isinstance(index, np.ndarray):
+            assert index.ndim == 1, "Index array must be 1D"
+        new_data = np.delete(self._data, index, axis=0)
+        self._data = new_data  # type: ignore
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "NoteArray") -> None:
         self._data[index] = value._data
@@ -363,7 +366,7 @@ class ControlArray:
     def sort_time(self) -> None:
         """Sort the ControlArray by time."""
         sorted_indices = np.argsort(self.time)
-        self._data = self._data[sorted_indices]
+        self._data = self._data[sorted_indices]  # type: ignore
 
 
 @dataclass
@@ -1315,7 +1318,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
                 track_notes_ids = np.zeros((0,), dtype=np.int32)
             else:
                 track_notes_ids = note_groups[group_keys]
-                track_notes_ids = np.sort(track_notes_ids)  # to keep the original order of the notes in the midi
+                track_notes_ids = np.sort(track_notes_ids)  # type: ignore # to keep the original order of the notes in the midi
             track_program, track_channel = group_keys
             assert track_program >= 0 and track_program < 128, "program should be between 0 and 127"
             assert track_channel >= 0 and track_channel < 16, "channel should be between 0 and 15"

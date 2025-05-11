@@ -149,7 +149,7 @@ def _get_overlapping_notes_pairs_jit(
         pitch_end_indices[p] = i + 1
 
     # Process each pitch independently
-    overlapping_notes = []
+    overlapping_notes: list[tuple[int, int]] = []
     for k in range(num_pitches):
         # Check overlaps within this pitch
         for i in range(pitch_start_indices[k], pitch_end_indices[k]):
@@ -165,7 +165,12 @@ def _get_overlapping_notes_pairs_jit(
     if len(overlapping_notes) == 0:
         result = np.empty((0, 2), dtype=np.int64)
     else:
-        result = np.array(overlapping_notes, dtype=np.int64)
+        num_ovrlapping_notes = len(overlapping_notes)
+        result = np.empty((num_ovrlapping_notes, 2), dtype=np.int64)
+        for i in range(num_ovrlapping_notes):
+            result[i, 0] = overlapping_notes[i][0]
+            result[i, 1] = overlapping_notes[i][1]
+
     return result
 
 

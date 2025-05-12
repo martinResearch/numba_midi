@@ -104,6 +104,11 @@ Our library has also been benchmarked against alternatives on the [symusic page]
 
 **Note:** We could probably get a 2x speedup with a reasonable amount of effort by moving more code to Numba JIT-compiled functions.
 
+# TODO
+
+* add conversion function from and to pypianoroll structure
+* add conversion function from and to muspy sructure
+  
 ## Alternatives
 
 Here are some alternative libraries and how they compare to `numba_midi`:

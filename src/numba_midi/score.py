@@ -1125,12 +1125,12 @@ class Score:
         # Convert the quantized beats back to time
         quantized_times = self.beats_to_times(quantized_beats)
         return quantized_times[0]
-    
-    def reattribute_midi_channels(self, max_channels:int=0) -> None:
+
+    def reattribute_midi_channels(self, max_channels: int = 0) -> None:
         """Attribute channels to tracks with constrain on the drum tracks."""
-        channel_mapping = attribute_midi_channels(score, max_channels)
-        for track in self.tracks:
-            track.channel = channel_mapping[track.midi_track_id]
+        channel_mapping = attribute_midi_channels(self, max_channels)
+        for track_id, track in enumerate(self.tracks):
+            track.channel = channel_mapping[track_id]
 
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
@@ -1642,10 +1642,11 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
     )
     return new_score
 
-def attribute_midi_channels(score: Score, max_channels:int=0) -> dict[int,int]:
+
+def attribute_midi_channels(score: Score, max_channels: int = 0) -> dict[int, int]:
     """Attribute channels to tracks with constrain on the drum tracks."""
     if max_channels == 0:
-        max_channels =  len(score.tracks)+1
+        max_channels = len(score.tracks) + 1
     if len(score.tracks) > max_channels:
         raise ValueError("MIDI only supports 16 channels.")
 
@@ -1671,8 +1672,6 @@ def attribute_midi_channels(score: Score, max_channels:int=0) -> dict[int,int]:
             else:
                 channel_mapping[track_id] = available_channels.pop(0)
     return channel_mapping
-
-
 
 
 def filter_instruments(score: Score, instrument_names: list[str]) -> Score:

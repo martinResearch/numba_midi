@@ -7,9 +7,8 @@ from numba_midi.score import attribute_midi_channels, Score
 
 def to_tinysoundfont(score: Score) -> list[tinysoundfont.midi.Event]:
     """Convert a Score object to a list of TinySoundFont MIDI events."""
-
     mapping_channels = attribute_midi_channels(score)
-    # conver to events
+    # convert to events
     midi_events = []
     for track_id, track in enumerate(score.tracks):
         channel = mapping_channels[track_id]

@@ -1125,6 +1125,12 @@ class Score:
         # Convert the quantized beats back to time
         quantized_times = self.beats_to_times(quantized_beats)
         return quantized_times[0]
+    
+    def reattribute_midi_channels(self, max_channels:int=0) -> None:
+        """Attribute channels to tracks with constrain on the drum tracks."""
+        channel_mapping = attribute_midi_channels(score, max_channels)
+        for track in self.tracks:
+            track.channel = channel_mapping[track.midi_track_id]
 
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
@@ -1636,21 +1642,23 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
     )
     return new_score
 
-
-def reattribute_midi_channels(score: Score) -> None:
+def attribute_midi_channels(score: Score, max_channels:int=0) -> dict[int,int]:
     """Attribute channels to tracks with constrain on the drum tracks."""
-    if len(score.tracks) > 16:
+    if max_channels == 0:
+        max_channels =  len(score.tracks)+1
+    if len(score.tracks) > max_channels:
         raise ValueError("MIDI only supports 16 channels.")
 
-    available_channels = [i for i in range(16)]
+    available_channels = [i for i in range(max_channels)]
     # the channel 9 is reserved for drums
     available_channels.remove(DRUM_CHANNEL)
 
     dum_channel_used = False
+    channel_mapping = {}
 
-    for track in score.tracks:
+    for track_id, track in enumerate(score.tracks):
         if track.is_drum:
-            track.channel = DRUM_CHANNEL
+            channel_mapping[track_id] = DRUM_CHANNEL
             if dum_channel_used:
                 raise ValueError("Drum channel already used")
             dum_channel_used = True
@@ -1659,8 +1667,12 @@ def reattribute_midi_channels(score: Score) -> None:
                 raise ValueError("No available channels left")
             if track.channel in available_channels:
                 available_channels.remove(track.channel)
+                channel_mapping[track_id] = track.channel
             else:
-                track.channel = available_channels.pop(0)
+                channel_mapping[track_id] = available_channels.pop(0)
+    return channel_mapping
+
+
 
 
 def filter_instruments(score: Score, instrument_names: list[str]) -> Score:

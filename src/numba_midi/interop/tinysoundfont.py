@@ -2,21 +2,17 @@
 
 import tinysoundfont
 
-from numba_midi.score import merge_non_overlapping_tracks, reattribute_midi_channels, Score
+from numba_midi.score import attribute_midi_channels, Score
 
 
 def to_tinysoundfont(score: Score) -> list[tinysoundfont.midi.Event]:
     """Convert a Score object to a list of TinySoundFont MIDI events."""
-    # remove empty tracks
-    score_cleaned = score.without_empty_tracks()
-    # merge non-overlapping tracks that use the same program to reduce the number of channels required
-    score_cleaned = merge_non_overlapping_tracks(score_cleaned)
-    # reattribute MIDI channels to tracks
-    reattribute_midi_channels(score_cleaned)
+
+    mapping_channels = attribute_midi_channels(score)
     # conver to events
     midi_events = []
-    for track in score_cleaned.tracks:
-        channel = track.channel
+    for track_id, track in enumerate(score.tracks):
+        channel = mapping_channels[track_id]
         midi_events.append(
             tinysoundfont.midi.Event(
                 action=tinysoundfont.midi.ProgramChange(track.program), t=0.0, channel=channel, persistent=True

@@ -107,8 +107,9 @@ Our library has also been benchmarked against alternatives on the [symusic page]
 # TODO
 
 * add conversion function from and to pypianoroll structure
-* add conversion function from and to muspy sructure
-  
+* add conversion function from and to muspy structure
+* add pianoroll plotting functions into numpy arrays and matplotlib plots.
+
 ## Alternatives
 
 Here are some alternative libraries and how they compare to `numba_midi`:

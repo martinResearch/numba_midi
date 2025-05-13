@@ -17,18 +17,6 @@ event_dtype = np.dtype(
     ]
 )
 
-# event types:
-# 0: Note On
-# 1: Note Off
-# 2: Pitch Bend
-# 3: Control Change
-# 4: Program Change
-# 5: Tempo Change
-# 6: Channel Aftertouch
-# 7: Polyphonic Aftertouch
-# 8: SysEx
-# 9: End of track
-
 
 class EventArray:
     """Wrapper for a structured numpy array with event_dtype elements."""
@@ -108,6 +96,18 @@ class EventArray:
     @property
     def size(self) -> int:
         return self._data.size
+
+
+# event types:
+# 0: Note On
+# 1: Note Off
+# 2: Pitch Bend
+# 3: Control Change
+# 4: Program Change
+# 5: Tempo Change
+# 6: Channel Aftertouch
+# 7: Polyphonic Aftertouch
+# 8: SysEx
 
 
 @dataclass
@@ -252,7 +252,7 @@ def encode_pitchbend(value: int) -> tuple[int, int]:
     return byte1, byte2
 
 
-@njit(cache=True, boundscheck=True)
+# @njit(cache=True, boundscheck=True)
 def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):
@@ -263,8 +263,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
     assert track_length > 0, "Track length must be positive"
     track_end = offset + track_length
     assert track_end <= len(data), "Track length too large."
-
-    midi_events: list[tuple[np.uint32, np.uint8, np.uint8, np.int32, np.int16]] = List()
+    midi_events = List()
     track_name = b""
     tick = np.uint32(0)
     numerator = 4
@@ -287,7 +286,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
 
             if meta_type == 0x51:  # Set Tempo event
                 current_tempo = (meta_data[0] << 16) | (meta_data[1] << 8) | meta_data[2]
-                midi_events.append((tick, np.uint8(5), np.uint8(0), np.int32(current_tempo), np.int16(0)))
+                midi_events.append((tick, 5, 0, current_tempo, 0))
 
             # time signature
             elif meta_type == 0x58:
@@ -315,7 +314,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 # Lyric event
                 pass
             elif meta_type == 0x2F:  # End of track
-                midi_events.append((tick, np.uint8(9), np.uint8(0), np.int32(0), np.int16(0)))
+                pass
 
         elif status_byte == 0xF0:  # SysEx event
             # System Exclusive (aka SysEx) messages are used to send device specific data.
@@ -347,38 +346,37 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
             if message_type == 0x9:  # Note On
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(0), channel, pitch, velocity))
+                midi_events.append((tick, 0, channel, pitch, velocity))
 
             elif message_type == 0x8:  # Note Off
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(1), channel, pitch, velocity))
+                midi_events.append((tick, 1, channel, pitch, velocity))
 
             elif message_type == 0xB:  # Control Change
                 number, value = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(3), channel, number, value))
+                midi_events.append((tick, 3, channel, number, value))
 
             elif message_type == 0xC:  # program change
-                program = np.int32(data[offset])
-                midi_events.append((tick, np.uint8(4), channel, program, np.int16(0)))
+                midi_events.append((tick, 4, channel, data[offset], 0))
                 offset += 1
 
             elif message_type == 0xE:  # Pitch Bend
                 value = decode_pitch_bend(data[offset : offset + 2])
                 assert value >= -8192 and value <= 8191, "Pitch bend value out of range"
-                midi_events.append((tick, np.uint8(2), channel, value, np.int16(0)))
+                midi_events.append((tick, 2, channel, value, 0))
                 offset += 2
 
             elif message_type == 0xA:  # Polyphonic Aftertouch
                 pitch, pressure = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(7), channel, pitch, pressure))
+                midi_events.append((tick, 7, channel, pitch, pressure))
 
             elif message_type == 0xD:  # Channel Aftertouch
                 pressure = data[offset]
                 offset += 1
-                midi_events.append((tick, np.uint8(6), channel, pressure, np.int16(0)))
+                midi_events.append((tick, 6, channel, pressure, 0))
             else:
                 offset += 1
 
@@ -550,9 +548,6 @@ def _encode_midi_track_numba(
         elif event_type == 6:
             # Channel Aftertouch
             data.extend([0xD0 | channel, value1])
-        elif event_type == 9:
-            # End of track
-            data.extend([0xFF, 0x2F, 0])
         else:
             raise ValueError(f"Invalid event type: {event_type}")
 

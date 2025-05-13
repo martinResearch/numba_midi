@@ -1126,12 +1126,6 @@ class Score:
         quantized_times = self.beats_to_times(quantized_beats)
         return quantized_times[0]
 
-    def reattribute_midi_channels(self, max_channels: int = 0) -> None:
-        """Attribute channels to tracks with constrain on the drum tracks."""
-        channel_mapping = attribute_midi_channels(self, max_channels)
-        for track_id, track in enumerate(self.tracks):
-            track.channel = channel_mapping[track_id]
-
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
     """Group data by keys."""
@@ -1264,6 +1258,14 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
 
         duration = max(duration, events_times.max())
 
+        # remove end of track events as they are not associated to a channel
+        not_end_of_track = events.event_type != 9
+        events_programs = events_programs[not_end_of_track]
+        events = events[not_end_of_track]
+        events_ticks = events_ticks[not_end_of_track]
+        events_times = events_times[not_end_of_track]
+        if len(events_times) == 0:
+            continue
         # sort all the events in lexicographic order by channel and tick
         # this allows to have a order for the events that simplifies the code to process them
         events_groups = group_data([events_programs, events.channel])
@@ -1395,6 +1397,9 @@ def score_to_midi(score: Score) -> Midi:
     midi_tracks = []
 
     use_multiple_tracks = len(set(track.midi_track_id for track in score.tracks)) > 1
+    # use multiple track if more than 16 tracks
+    if len(score.tracks) >= 16:
+        use_multiple_tracks = True
     if has_duplicate_values([track.channel for track in score.tracks]):
         # multiple tracks with the same channel not supported because
         # it requires carefull program changes each time the instrument changes in the channel
@@ -1406,6 +1411,7 @@ def score_to_midi(score: Score) -> Midi:
         for track in score.tracks:
             num_events += len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
         num_events += len(score.tempo)
+        num_events += len(score.tracks)  # end of tracks event.
         events = EventArray.zeros(num_events)
 
         id_start = 0
@@ -1451,25 +1457,16 @@ def score_to_midi(score: Score) -> Midi:
             )
         lyrics = None
 
-    for track in score.tracks:
+    channels = attribute_midi_channels(score, max_channels=0, use_multiple_tracks=use_multiple_tracks)
+    for track_id, track in enumerate(score.tracks):
         if use_multiple_tracks:
-            num_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
+            num_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 2
             events = EventArray.zeros(num_events)
             id_start = 0
 
-        num_track_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
+        num_track_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 2
 
-        if num_track_events == 0:
-            # create a dummy end of song event to keep the track with a duration
-            events = EventArray.zeros(1)
-            events.event_type[:] = 6
-            events.channel[:] = 0
-            events.value1[:] = 0
-            events.value2[:] = 0
-            tick = score.last_tick()
-            events.tick[:] = tick
-
-        events.channel[id_start : id_start + num_track_events] = track.channel
+        events.channel[id_start : id_start + num_track_events] = channels[track_id]
 
         # add the program change event
         events.event_type[id_start] = 4
@@ -1508,6 +1505,15 @@ def score_to_midi(score: Score) -> Midi:
         events.value2[id_start : id_start + len(track.pitch_bends)] = 0
         events.tick[id_start : id_start + len(track.pitch_bends)] = track.pitch_bends.tick
         id_start += len(track.pitch_bends)
+
+        # add a end of track event based on the score duration
+
+        events.event_type[id_start] = 9
+        events.channel[id_start] = 0
+        events.value1[id_start] = 0
+        events.value2[id_start] = 0
+        events.tick[id_start] = score.last_tick()
+        id_start += 1
 
         if use_multiple_tracks:
             order = np.lexsort((np.arange(len(events)), events.tick))
@@ -1579,7 +1585,8 @@ def save_score_to_midi(score: Score, file_path: str, check_round_trip: bool = Tr
     midi_score = score_to_midi(score)
     if check_round_trip:
         score2 = midi_to_score(midi_score, minimize_tempo=False, notes_mode="first_in_first_out")
-        assert_scores_equal(score, score2)
+        # We do not compare channels because they can be created in score_to_midi
+        assert_scores_equal(score, score2, compare_channels=False)
     save_midi_file(midi_score, file_path)
 
 
@@ -1643,34 +1650,45 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
     return new_score
 
 
-def attribute_midi_channels(score: Score, max_channels: int = 0) -> dict[int, int]:
+def attribute_midi_channels(score: Score, max_channels: int, use_multiple_tracks: bool) -> dict[int, int]:
     """Attribute channels to tracks with constrain on the drum tracks."""
     if max_channels == 0:
-        max_channels = len(score.tracks) + 1
-    if len(score.tracks) > max_channels:
-        raise ValueError("MIDI only supports 16 channels.")
+        max_channels = max(16, len(score.tracks) + 1)
 
-    available_channels = [i for i in range(max_channels)]
-    # the channel 9 is reserved for drums
-    available_channels.remove(DRUM_CHANNEL)
-
-    dum_channel_used = False
-    channel_mapping = {}
-
-    for track_id, track in enumerate(score.tracks):
-        if track.is_drum:
-            channel_mapping[track_id] = DRUM_CHANNEL
-            if dum_channel_used:
-                raise ValueError("Drum channel already used")
-            dum_channel_used = True
-        else:
-            if len(available_channels) == 0:
-                raise ValueError("No available channels left")
-            if track.channel in available_channels:
-                available_channels.remove(track.channel)
+    if use_multiple_tracks:
+        channel_mapping = {}
+        for track_id, track in enumerate(score.tracks):
+            if track.is_drum:
+                channel_mapping[track_id] = DRUM_CHANNEL
+            elif track.channel and track.channel < max_channels:
                 channel_mapping[track_id] = track.channel
             else:
-                channel_mapping[track_id] = available_channels.pop(0)
+                channel_mapping[track_id] = 0
+    else:
+        if len(score.tracks) > max_channels:
+            raise ValueError("MIDI only supports 16 channels.")
+
+        available_channels = [i for i in range(max_channels)]
+        # the channel 9 is reserved for drums
+        available_channels.remove(DRUM_CHANNEL)
+
+        dum_channel_used = False
+        channel_mapping = {}
+
+        for track_id, track in enumerate(score.tracks):
+            if track.is_drum:
+                channel_mapping[track_id] = DRUM_CHANNEL
+                if dum_channel_used:
+                    raise ValueError("Drum channel already used")
+                dum_channel_used = True
+            else:
+                if len(available_channels) == 0:
+                    raise ValueError("No available channels left")
+                if track.channel in available_channels:
+                    available_channels.remove(track.channel)
+                    channel_mapping[track_id] = track.channel
+                else:
+                    channel_mapping[track_id] = available_channels.pop(0)
     return channel_mapping
 
 
@@ -2052,6 +2070,8 @@ def assert_scores_equal(
     tick_tol: int = 0,
     compare_channels: bool = True,
 ) -> None:
+    for i, track in enumerate(score1.tracks):
+        print(f"{i}: Track name", track.name)
     assert len(score1.tracks) == len(score2.tracks), "The scores have different number of tracks"
     max_diff = 0
     tracks_1 = score1.tracks

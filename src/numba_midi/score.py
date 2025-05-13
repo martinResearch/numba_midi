@@ -2070,8 +2070,7 @@ def assert_scores_equal(
     tick_tol: int = 0,
     compare_channels: bool = True,
 ) -> None:
-    for i, track in enumerate(score1.tracks):
-        print(f"{i}: Track name", track.name)
+
     assert len(score1.tracks) == len(score2.tracks), "The scores have different number of tracks"
     max_diff = 0
     tracks_1 = score1.tracks

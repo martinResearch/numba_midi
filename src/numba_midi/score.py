@@ -1240,9 +1240,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     for midi_track_id, midi_track in enumerate(midi_score.tracks):
         if midi_track.events.size == 0:
             continue
-        # if only tempo events, skip the track
-        if np.all(midi_track.events.event_type == 5):
-            continue
+
         numerator, denominator = midi_track.time_signature
 
         clocks_per_click = midi_track.clocks_per_click
@@ -1258,12 +1256,26 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
 
         duration = max(duration, events_times.max())
 
+        # if only tempo events, skip the track
+        if np.all(midi_track.events.event_type == 5):
+            continue
+
         # remove end of track events as they are not associated to a channel
         not_end_of_track = events.event_type != 9
         events_programs = events_programs[not_end_of_track]
         events = events[not_end_of_track]
         events_ticks = events_ticks[not_end_of_track]
         events_times = events_times[not_end_of_track]
+
+        # remove the tempo events as they are not associated to a channel
+        not_tempo_events = events.event_type != 5
+        events_programs = events_programs[not_tempo_events]
+        events = events[not_tempo_events]
+        events_ticks = events_ticks[not_tempo_events]
+        events_times = events_times[not_tempo_events]
+        
+
+
         if len(events_times) == 0:
             continue
         # sort all the events in lexicographic order by channel and tick

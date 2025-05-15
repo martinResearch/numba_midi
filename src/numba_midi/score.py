@@ -1273,8 +1273,6 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         events = events[not_tempo_events]
         events_ticks = events_ticks[not_tempo_events]
         events_times = events_times[not_tempo_events]
-        
-
 
         if len(events_times) == 0:
             continue

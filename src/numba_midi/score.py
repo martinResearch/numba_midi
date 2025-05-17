@@ -10,6 +10,7 @@ import numpy as np
 from numba_midi._score_numba import (
     _get_overlapping_notes_pairs_jit,
     extract_notes_start_stop_numba,
+    get_beat_and_bar_ticks_jit,
     get_events_program,
     get_pedals_from_controls_jit,
     recompute_tempo_times,
@@ -1010,25 +1011,15 @@ class Score:
             antialiasing=antialiasing,
         )
 
-    def get_beat_positions(self) -> np.ndarray:
-        """Get the beat positions in seconds."""
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator
-        # Compute the beat positions in seconds using the tempo
-        beat_ticks = np.cumsum(ticks_per_beat)
-        beat_ticks = np.insert(beat_ticks, 0, 0)
-        beat_time = ticks_to_times(beat_ticks, self.tempo, self.ticks_per_quarter)
-        return beat_time
+    def get_beat_and_bar_ticks(self) -> tuple[np.ndarray, np.ndarray]:
+        return get_beat_and_bar_ticks_jit(self.ticks_per_quarter, self.last_tick(), self.time_signature._data)
 
-    def get_bar_positions(self) -> np.ndarray:
-        """Get the bar positions in seconds."""
-        # get the bar position taking the time_signature into account
-        tick_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator
-        beat_per_bar = self.time_signature.numerator
-        ticks_per_bar = tick_per_beat * beat_per_bar
-        bar_ticks = np.cumsum(ticks_per_bar)
-        bar_ticks = np.insert(bar_ticks, 0, 0)  # Add the first bar at time 0
+    def get_beat_and_bar_times(self) -> tuple[np.ndarray, np.ndarray]:
+        """Get the beat and bar times in seconds."""
+        beat_ticks, bar_ticks = self.get_beat_and_bar_ticks()
         bar_time = ticks_to_times(bar_ticks, self.tempo, self.ticks_per_quarter)
-        return bar_time
+        beat_time = ticks_to_times(beat_ticks, self.tempo, self.ticks_per_quarter)
+        return beat_time, bar_time
 
     def save(self, file_path: str | Path) -> None:
         """Save the score to a MIDI file."""

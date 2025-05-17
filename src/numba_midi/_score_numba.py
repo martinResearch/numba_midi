@@ -199,3 +199,34 @@ def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
 
         time = ref_time + (tick - ref_tick) * second_per_tick
         tempo[i]["time"] = time
+
+
+@njit(cache=True, boundscheck=False)
+def get_beat_and_bar_ticks_jit(
+    ticks_per_quarter: int, last_tick: int, time_signature: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    ticks_per_beat = ticks_per_quarter * 4 // time_signature["denominator"]
+    beat = 0
+    tick = 0
+    bar = 0
+    i_signature = 0
+    current_ticks_per_beat = ticks_per_beat[0]
+    beat_ticks = [0]
+    bar_ticks = [0]
+    while True:
+        if tick >= last_tick:
+            break
+        beat += 1
+        tick += current_ticks_per_beat
+        beat_ticks.append(tick)
+        if beat >= time_signature["numerator"][i_signature]:
+            bar += 1
+            beat = 0
+            bar_ticks.append(tick)
+        if i_signature + 1 < len(time_signature["tick"]) and tick >= time_signature["tick"][i_signature + 1]:
+            i_signature += 1
+            current_ticks_per_beat = ticks_per_beat[i_signature]
+
+    bar_ticks_np = np.array(bar_ticks)
+    beat_ticks_np = np.array(beat_ticks)
+    return beat_ticks_np, bar_ticks_np

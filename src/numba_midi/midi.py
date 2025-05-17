@@ -261,7 +261,7 @@ def encode_pitchbend(value: int) -> tuple[int, int]:
     return byte1, byte2
 
 
-# @njit(cache=True, boundscheck=True)
+@njit(cache=True, boundscheck=True)
 def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):

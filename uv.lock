@@ -193,7 +193,7 @@ wheels = [
 
 [[package]]
 name = "numba-midi"
-version = "0.1.9"
+version = "0.1.13"
 source = { editable = "." }
 dependencies = [
     { name = "numba" },

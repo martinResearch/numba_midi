@@ -1220,25 +1220,24 @@ class Score:
         """Convert time to beats."""
         assert len(time) > 0, "Time must be a non-empty array"
         # Compute the beat positions in seconds using the tempo
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
-        beat_ticks = self.times_to_ticks(time)
-        beats = beat_ticks / ticks_per_beat
+        beat_ticks, _ = self.get_beat_and_bar_ticks()
+        ticks = self.times_to_ticks(time)
+        # Compute the  positions in beats
+        beat_idx = np.searchsorted(beat_ticks, ticks, side="right") - 1
+        beats = beat_idx + (ticks - beat_ticks[beat_idx]) / (beat_ticks[beat_idx + 1] - beat_ticks[beat_idx])
         return beats
 
     def time_to_beat(self, time: float) -> float:
         """Convert time to beat."""
         assert time >= 0, "Time must be non-negative"
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
-        beat_ticks = self.time_to_tick(time)
-        beats = beat_ticks / ticks_per_beat
-        return beats
-
-    @property
-    def ticks_per_beat(self) -> float:
-        return self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
+        return float(self.times_to_beats(np.array([time]))[0])
 
     def beats_to_ticks(self, beats: np.ndarray) -> np.ndarray:
-        return beats * self.ticks_per_beat
+        beat_ticks, _ = self.get_beat_and_bar_ticks()
+        beats_floor = np.floor(beats).astype(np.int32)
+        beats_ceil = np.ceil(beats).astype(np.int32)
+        alpha = beats - beats_floor
+        return alpha * beat_ticks[beats_floor] + (1 - alpha) * beat_ticks[beats_ceil]
 
     def beats_to_times(self, beats: np.ndarray) -> np.ndarray:
         """Convert beats to time."""
@@ -1250,7 +1249,11 @@ class Score:
 
     def beat_to_tick(self, beat: float) -> int:
         """Convert a beat to tick."""
-        return int(beat * self.ticks_per_beat)
+        beat_ticks, _ = self.get_beat_and_bar_ticks()
+        beat_floor = np.floor(beat)
+        beat_ceil = np.ceil(beat)
+        alpha = beat - beat_floor
+        return alpha * beat_ticks[beat_floor] + (1 - alpha) * beat_ticks[beat_ceil]
 
     def quantize_times(self, times: np.ndarray, step: float) -> np.ndarray:
         """Quantize the score to the given time step in beat units."""

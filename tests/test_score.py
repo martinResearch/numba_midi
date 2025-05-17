@@ -15,10 +15,10 @@ def test_get_beat_positions() -> None:
         print(f"Testing get_beat_positions with {midi_file}")
         # load row midi score
         score = load_score(midi_file)
-        beat_positions = score.get_beat_positions()
+        beat_positions, bar = score.get_beat_and_bar_times()
         assert len(beat_positions) > 0
         assert np.all(np.diff(beat_positions) > 0)
-        bar = score.get_bar_positions()
+
         assert len(bar) > 0
         assert np.all(np.diff(bar) > 0)
 

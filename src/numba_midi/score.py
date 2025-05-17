@@ -1224,7 +1224,9 @@ class Score:
         ticks = self.times_to_ticks(time)
         # Compute the  positions in beats
         beat_idx = np.searchsorted(beat_ticks, ticks, side="right") - 1
-        beats = beat_idx + (ticks - beat_ticks[beat_idx]) / (beat_ticks[beat_idx + 1] - beat_ticks[beat_idx])
+        signature_idx = np.searchsorted(self.time_signature.time, time, side="right") - 1
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[signature_idx]
+        beats = beat_idx + (ticks - beat_ticks[beat_idx]) / ticks_per_beat
         return beats
 
     def time_to_beat(self, time: float) -> float:
@@ -1235,9 +1237,9 @@ class Score:
     def beats_to_ticks(self, beats: np.ndarray) -> np.ndarray:
         beat_ticks, _ = self.get_beat_and_bar_ticks()
         beats_floor = np.floor(beats).astype(np.int32)
-        beats_ceil = np.ceil(beats).astype(np.int32)
-        alpha = beats - beats_floor
-        return alpha * beat_ticks[beats_floor] + (1 - alpha) * beat_ticks[beats_ceil]
+        signature_idx = np.searchsorted(self.time_signature.time, beats, side="right") - 1
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[signature_idx]
+        return beat_ticks[beats_floor] + (beats - beats_floor) * ticks_per_beat
 
     def beats_to_times(self, beats: np.ndarray) -> np.ndarray:
         """Convert beats to time."""
@@ -1249,11 +1251,7 @@ class Score:
 
     def beat_to_tick(self, beat: float) -> int:
         """Convert a beat to tick."""
-        beat_ticks, _ = self.get_beat_and_bar_ticks()
-        beat_floor = np.floor(beat)
-        beat_ceil = np.ceil(beat)
-        alpha = beat - beat_floor
-        return alpha * beat_ticks[beat_floor] + (1 - alpha) * beat_ticks[beat_ceil]
+        return int(self.beats_to_ticks(np.array([beat]))[0])
 
     def quantize_times(self, times: np.ndarray, step: float) -> np.ndarray:
         """Quantize the score to the given time step in beat units."""

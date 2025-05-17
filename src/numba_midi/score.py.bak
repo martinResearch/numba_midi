@@ -48,162 +48,9 @@ pedal_dtype = np.dtype(
 )
 pitch_bend_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("value", np.int32)])
 tempo_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("bpm", np.float64)])
-signature_dtype = np.dtype(
-    [
-        ("time", np.float64),
-        ("tick", np.int32),
-        ("numerator", np.int32),
-        ("denominator", np.int32),
-        ("clocks_per_click", np.uint8),
-        ("notated_32nd_notes_per_beat", np.uint8),
-    ]
-)
+
 
 DRUM_CHANNEL = 9  # Midi convention
-
-
-@dataclass
-class Signature:
-    """MIDI time signature representation."""
-
-    time: float
-    tick: int
-    numerator: int
-    denominator: int
-    clocks_per_click: int
-    notated_32nd_notes_per_beat: int
-
-    def __post_init__(self) -> None:
-        assert self.time >= 0, "Time must be non-negative"
-        assert self.tick >= 0, "Tick must be non-negative"
-        assert self.numerator > 0, "Numerator must be positive"
-        assert self.denominator > 0, "Denominator must be positive"
-        assert self.clocks_per_click > 0, "Clocks per click must be positive"
-        assert self.notated_32nd_notes_per_beat > 0, "Notated 32nd notes per beat must be positive"
-
-
-class SignatureArray:
-    """Wrapper for a structured numpy array with signature_dtype elements."""
-
-    def __init__(
-        self,
-        time: np.ndarray | list[float],
-        tick: np.ndarray | list[int],
-        numerator: np.ndarray | list[int],
-        denominator: np.ndarray | list[int],
-        clocks_per_click: np.ndarray | list[int],
-        notated_32nd_notes_per_beat: np.ndarray | list[int],
-    ) -> None:
-        if isinstance(time, list):
-            time = np.array(time, dtype=np.float64)
-        if isinstance(tick, list):
-            tick = np.array(tick, dtype=np.int32)
-        if isinstance(numerator, list):
-            numerator = np.array(numerator, dtype=np.int32)
-        if isinstance(denominator, list):
-            denominator = np.array(denominator, dtype=np.int32)
-        if isinstance(clocks_per_click, list):
-            clocks_per_click = np.array(clocks_per_click, dtype=np.int32)
-        if isinstance(notated_32nd_notes_per_beat, list):
-            notated_32nd_notes_per_beat = np.array(notated_32nd_notes_per_beat, dtype=np.int32)
-        data = np.empty(len(time), dtype=signature_dtype)
-        data["time"] = time
-        data["tick"] = tick
-        data["numerator"] = numerator
-        data["denominator"] = denominator
-        data["clocks_per_click"] = clocks_per_click
-        data["notated_32nd_notes_per_beat"] = notated_32nd_notes_per_beat
-        self._data = data
-
-    @classmethod
-    def from_array(cls, data: np.ndarray) -> "SignatureArray":
-        if data.dtype != signature_dtype:
-            raise ValueError("Invalid dtype for SignatureArray")
-        if data.ndim != 1:
-            raise ValueError("SignatureArray must be 1D")
-        instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
-        return instance
-
-    @classmethod
-    def zeros(cls, size: int) -> "SignatureArray":
-        """Initialize the SignatureArray with zeros."""
-        return SignatureArray.from_array(np.zeros(size, dtype=signature_dtype))
-
-    @property
-    def time(self) -> np.ndarray:
-        return self._data["time"]
-
-    @time.setter
-    def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
-
-    @property
-    def tick(self) -> np.ndarray:
-        return self._data["tick"]
-
-    @tick.setter
-    def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
-
-    @property
-    def numerator(self) -> np.ndarray:
-        return self._data["numerator"]
-
-    @numerator.setter
-    def numerator(self, value: np.ndarray) -> None:
-        self._data["numerator"][:] = value
-
-    @property
-    def denominator(self) -> np.ndarray:
-        return self._data["denominator"]
-
-    @property
-    def clocks_per_click(self) -> np.ndarray:
-        return self._data["clocks_per_click"]
-
-    @property
-    def notated_32nd_notes_per_beat(self) -> np.ndarray:
-        return self._data["notated_32nd_notes_per_beat"]
-
-    @classmethod
-    def concatenate(cls, arrays: Iterable["SignatureArray"]) -> "SignatureArray":
-        """Concatenate multiple SignatureArrays."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    @overload
-    def __getitem__(self, index: int) -> Signature: ...
-    @overload
-    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "SignatureArray": ...
-
-    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "SignatureArray|Signature":
-        if isinstance(index, int):
-            result = self._data[index]
-            return Signature(
-                float(result["time"]),
-                int(result["tick"]),
-                int(result["numerator"]),
-                int(result["denominator"]),
-                int(result["clocks_per_click"]),
-                int(result["notated_32nd_notes_per_beat"]),
-            )
-        result = self._data[index]
-        return SignatureArray.from_array(result)
-
-    def __iter__(self) -> Generator[Signature, None, None]:
-        for i in range(len(self._data)):
-            yield Signature(
-                self.time[i],
-                self.tick[i],
-                self.numerator[i],
-                self.denominator[i],
-                self.clocks_per_click[i],
-                self.notated_32nd_notes_per_beat[i],
-            )
 
 
 @dataclass
@@ -802,7 +649,7 @@ class TempoArray:
             tick = np.array(tick, dtype=np.int32)
         if isinstance(bpm, list):
             bpm = np.array(bpm, dtype=np.float64)
-        data = np.empty(len(time), dtype=tempo_dtype)
+        data = np.empty(len(time), dtype=note_dtype)
         data["time"] = time
         data["tick"] = tick
         data["bpm"] = bpm
@@ -955,9 +802,12 @@ class Score:
     tracks: list[Track]
     duration: float
     tempo: TempoArray  # 1D structured numpy array with tempo_dtype elements
-    time_signature: SignatureArray  # 1D structured numpy array with signature_dtype elements
     lyrics: list[tuple[int, str]] | None = None
+
     ticks_per_quarter: int = 480
+    time_signature: tuple[int, int] = (4, 4)
+    notated_32nd_notes_per_beat: int = 8
+    clocks_per_click: int = 24
 
     @property
     def num_notes(self) -> int:
@@ -981,9 +831,6 @@ class Score:
 
     def __post_init__(self) -> None:
         assert isinstance(self.tempo, TempoArray), "Tempo must be a structured numpy array with tempo_dtype elements"
-        assert isinstance(self.time_signature, SignatureArray), (
-            "Time signature must be a structured numpy array with signature_dtype elements"
-        )
         assert self.tracks is not None, "Tracks must be a list of Track objects"
         # assert len(self.tracks) > 0, "Tracks must be a non-empty list of Track objects"
         assert self.duration > 0, "Duration must be a positive float"
@@ -1012,7 +859,7 @@ class Score:
 
     def get_beat_positions(self) -> np.ndarray:
         """Get the beat positions in seconds."""
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
         # Compute the beat positions in seconds using the tempo
         beat_ticks = np.arange(0, self.last_tick(), ticks_per_beat)
         beat_time = ticks_to_times(beat_ticks, self.tempo, self.ticks_per_quarter)
@@ -1021,8 +868,8 @@ class Score:
     def get_bar_positions(self) -> np.ndarray:
         """Get the bar positions in seconds."""
         # get the bar position taking the time_signature into account
-        tick_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
-        beat_per_bar = self.time_signature.numerator[0]
+        tick_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
+        beat_per_bar = self.time_signature[0]
         ticks_per_bar = tick_per_beat * beat_per_bar
         bar_ticks = np.arange(0, self.last_tick(), ticks_per_bar)
         bar_time = ticks_to_times(bar_ticks, self.tempo, self.ticks_per_quarter)
@@ -1227,7 +1074,7 @@ class Score:
         """Convert time to beats."""
         assert len(time) > 0, "Time must be a non-empty array"
         # Compute the beat positions in seconds using the tempo
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
         beat_ticks = self.times_to_ticks(time)
         beats = beat_ticks / ticks_per_beat
         return beats
@@ -1235,14 +1082,14 @@ class Score:
     def time_to_beat(self, time: float) -> float:
         """Convert time to beat."""
         assert time >= 0, "Time must be non-negative"
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature[1]
         beat_ticks = self.time_to_tick(time)
         beats = beat_ticks / ticks_per_beat
         return beats
 
     @property
     def ticks_per_beat(self) -> float:
-        return self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
+        return self.ticks_per_quarter * 4 // self.time_signature[1]
 
     def beats_to_ticks(self, beats: np.ndarray) -> np.ndarray:
         return beats * self.ticks_per_beat
@@ -1374,40 +1221,11 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         tempo_events.tick[:] = 0
 
     tempo_events_times = get_event_times(tempo_events._data, tempo_events._data, midi_score.ticks_per_quarter)
+    tempo = TempoArray.zeros(len(tempo_events))
+    tempo.time = tempo_events_times
+    tempo.tick = tempo_events.tick
+    tempo.bpm = 60000000 / tempo_events.value1
 
-    tempo = TempoArray(
-        time=tempo_events_times,
-        tick=tempo_events.tick,
-        bpm=60000000 / tempo_events.value1,
-    )
-
-    # get all the signature events
-    all_signature_events = []
-    for midi_track in midi_score.tracks:
-        signature_events = midi_track.events[midi_track.events.event_type == 10]
-        if signature_events.size > 0:
-            all_signature_events.append(signature_events)
-
-    if len(all_signature_events) > 0:
-        signature_events = EventArray.concatenate(all_signature_events)
-        # sort by tick
-        signature_events = signature_events[np.argsort(signature_events.tick)]
-        # keep only the last signature change for each tick
-        signature_events = signature_events[np.hstack((np.diff(signature_events.tick) > 0, [True]))]
-    else:
-        signature_events = EventArray.zeros(1)
-        signature_events.value1[:] = 4
-        signature_events.value2[:] = 2
-
-    signature_events_times = get_event_times(signature_events._data, tempo_events._data, midi_score.ticks_per_quarter)
-    signature = SignatureArray(
-        time=signature_events_times,
-        tick=signature_events.tick,
-        numerator=signature_events.value1,
-        denominator=2**signature_events.value2,
-        clocks_per_click=signature_events.value3,
-        notated_32nd_notes_per_beat=signature_events.value4,
-    )
     # remove unnecessary tempo events
     if minimize_tempo:
         tempo = tempo[np.hstack(([True], (np.diff(tempo.bpm) != 0)))]
@@ -1423,6 +1241,11 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         if midi_track.events.size == 0:
             continue
 
+        numerator, denominator = midi_track.time_signature
+
+        clocks_per_click = midi_track.clocks_per_click
+        notated_32nd_notes_per_beat = midi_track.notated_32nd_notes_per_beat
+
         # get the program for each event
         events_programs = get_events_program(midi_track.events._data)
 
@@ -1437,12 +1260,15 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         if np.all(midi_track.events.event_type == 5):
             continue
 
-        # remove end of track, tempy and signature events as they are not associated to a channel
-        keep = (events.event_type != 9) & (events.event_type != 5) & (events.event_type != 10)
-        events_programs = events_programs[keep]
-        events = events[keep]
-        events_ticks = events_ticks[keep]
-        events_times = events_times[keep]
+        # remove end of track events as they are not associated to a channel
+        not_end_of_track = events.event_type != 9
+        events_programs = events_programs[not_end_of_track]
+        events = events[not_end_of_track]
+        events_ticks = events_ticks[not_end_of_track]
+        events_times = events_times[not_end_of_track]
+
+        
+
 
         if len(events_times) == 0:
             continue
@@ -1559,8 +1385,10 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         tracks=tracks,
         lyrics=lyrics,
         duration=duration,
-        time_signature=signature,
+        time_signature=(numerator, denominator),
+        clocks_per_click=clocks_per_click,
         ticks_per_quarter=ticks_per_quarter,
+        notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
         tempo=tempo,
     )
 
@@ -1604,30 +1432,21 @@ def score_to_midi(score: Score) -> Midi:
 
         lyrics = score.lyrics
     else:
-        # create track with the tempo changes and time signature
+        # create track with the tempo changes
         tempo_events = EventArray.zeros(len(score.tempo))
         tempo_events.event_type[:] = 5
         tempo_events.channel[:] = 0
         tempo_events.value1[:] = 60000000 / score.tempo.bpm
         tempo_events.value2[:] = 0
         tempo_events.tick[:] = score.tempo.tick
-
-        # add the time signature event
-        signature_events = EventArray.zeros(len(score.time_signature))
-        signature_events.event_type[:] = 10
-        signature_events.channel[:] = 0
-        signature_events.value1[:] = score.time_signature.numerator
-        signature_events.value2[:] = np.log2(score.time_signature.denominator)
-        signature_events.value3[:] = score.time_signature.clocks_per_click
-        signature_events.value4[:] = score.time_signature.notated_32nd_notes_per_beat
-        signature_events.tick[:] = score.time_signature.tick
-
-        events = EventArray.concatenate([tempo_events, signature_events])
         midi_tracks.append(
             MidiTrack(
                 name="tempo",
                 lyrics=[],
-                events=events,
+                events=tempo_events,
+                time_signature=score.time_signature,
+                clocks_per_click=score.clocks_per_click,
+                notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
             )
         )
         # create a track for the lyrics
@@ -1637,6 +1456,9 @@ def score_to_midi(score: Score) -> Midi:
                     name="lyrics",
                     events=EventArray.zeros(0),
                     lyrics=score.lyrics,
+                    time_signature=score.time_signature,
+                    clocks_per_click=score.clocks_per_click,
+                    notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
                 )
             )
         lyrics = None
@@ -1706,6 +1528,9 @@ def score_to_midi(score: Score) -> Midi:
                 name=track.name,
                 events=events,
                 lyrics=lyrics,
+                time_signature=score.time_signature,
+                clocks_per_click=score.clocks_per_click,
+                notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
             )
             midi_tracks.append(midi_track)
 
@@ -1719,6 +1544,9 @@ def score_to_midi(score: Score) -> Midi:
             name=track.name,
             events=events,
             lyrics=lyrics,
+            time_signature=score.time_signature,
+            clocks_per_click=score.clocks_per_click,
+            notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         )
         midi_tracks = [midi_track]
     midi_score = Midi(tracks=midi_tracks, ticks_per_quarter=score.ticks_per_quarter)
@@ -1819,7 +1647,9 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
         tracks=new_tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -1882,7 +1712,9 @@ def filter_instruments(score: Score, instrument_names: list[str]) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -1898,7 +1730,9 @@ def remove_empty_tracks(score: Score) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -1916,7 +1750,9 @@ def remove_pitch_bends(score: Score) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -1934,7 +1770,9 @@ def remove_pedals(score: Score) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -1952,7 +1790,9 @@ def remove_control_changes(score: Score) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -1969,7 +1809,9 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )
@@ -2079,7 +1921,9 @@ def update_ticks(score: Score, tempo: TempoArray) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=tempo,
     )
 
@@ -2164,7 +2008,9 @@ def crop_score(score: Score, start: float, end: float) -> Score:
         tracks=tracks,
         duration=duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=new_tempo,
     )
 
@@ -2176,7 +2022,9 @@ def select_tracks(score: Score, track_ids: list[int]) -> Score:
         tracks=tracks,
         duration=score.duration,
         time_signature=score.time_signature,
+        clocks_per_click=score.clocks_per_click,
         ticks_per_quarter=score.ticks_per_quarter,
+        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
         tempo=score.tempo,
         lyrics=score.lyrics,
     )

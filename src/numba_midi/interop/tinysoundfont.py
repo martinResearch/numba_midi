@@ -1,6 +1,7 @@
 """TinySoundFont interop module."""
 
 import tinysoundfont
+import tinysoundfont.midi
 
 from numba_midi.score import attribute_midi_channels, Score
 

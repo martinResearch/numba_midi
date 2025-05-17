@@ -1,6 +1,7 @@
 """Functions to parse MIDI files and extract events using Numba for performance."""
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from numba.core.decorators import njit
 from numba.typed import List
@@ -14,6 +15,8 @@ event_dtype = np.dtype(
         ("channel", np.uint8),  # MIDI Channel (0-15)
         ("value1", np.int32),  # Event-dependent value
         ("value2", np.int16),  # Event-dependent value
+        ("value3", np.int8),  # Event-dependent value
+        ("value4", np.int8),  # Event-dependent value
     ]
 )
 
@@ -28,6 +31,7 @@ event_dtype = np.dtype(
 # 7: Polyphonic Aftertouch
 # 8: SysEx
 # 9: End of track
+# 10@: Time Signature Change
 
 
 class EventArray:
@@ -45,7 +49,7 @@ class EventArray:
         return cls(data)
 
     @classmethod
-    def concatenate(cls, arrays: list["EventArray"]) -> "EventArray":
+    def concatenate(cls, arrays: Iterable["EventArray"]) -> "EventArray":
         """Concatenate multiple EventArrays."""
         if not arrays:
             raise ValueError("No EventArrays to concatenate")
@@ -92,6 +96,22 @@ class EventArray:
     def value2(self, value: np.ndarray | int) -> None:
         self._data["value2"][:] = value
 
+    @property
+    def value3(self) -> np.ndarray:
+        return self._data["value3"]
+
+    @value3.setter
+    def value3(self, value: np.ndarray | int) -> None:
+        self._data["value3"][:] = value
+
+    @property
+    def value4(self) -> np.ndarray:
+        return self._data["value4"]
+
+    @value4.setter
+    def value4(self, value: np.ndarray | int) -> None:
+        self._data["value4"][:] = value
+
     def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray":
         result = self._data[index]
         return EventArray(result)  # Return new wrapper for slices or boolean arrays
@@ -117,21 +137,10 @@ class MidiTrack:
     name: str
     events: EventArray  # 1D structured numpy array with event_dtype elements
     lyrics: list[tuple[int, str]] | None  # List of tuples (tick, lyric)
-    time_signature: tuple[int, int]
-    clocks_per_click: int
-    notated_32nd_notes_per_beat: int
 
     def __post_init__(self) -> None:
         assert isinstance(self.events, EventArray), "Events must be a EventArray"
         assert isinstance(self.name, str), "Track name must be a string"
-        assert isinstance(self.time_signature[0], int), "Numerator must be an integer"
-        assert self.time_signature[0] > 0, "Numerator must be positive"
-        assert isinstance(self.time_signature[1], int), "Denominator must be an integer"
-        assert self.time_signature[1] > 0, "Denominator must be positive"
-        assert isinstance(self.clocks_per_click, int), "Clocks per click must be an integer"
-        # assert self.clocks_per_click > 0, "Clocks per click must be positive"
-        assert isinstance(self.notated_32nd_notes_per_beat, int), "Notated 32nd notes per beat must be an integer"
-        assert self.notated_32nd_notes_per_beat > 0, "Notated 32nd notes per beat must be positive"
 
 
 @dataclass
@@ -252,7 +261,7 @@ def encode_pitchbend(value: int) -> tuple[int, int]:
     return byte1, byte2
 
 
-@njit(cache=True, boundscheck=True)
+# @njit(cache=True, boundscheck=True)
 def _parse_midi_track(data: bytes, offset: int) -> tuple:
     """Parses a MIDI track and accumulates time efficiently with Numba."""
     if unpack_uint32(data[offset : offset + 4]) != unpack_uint32(b"MTrk"):
@@ -264,13 +273,10 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
     track_end = offset + track_length
     assert track_end <= len(data), "Track length too large."
 
-    midi_events: list[tuple[np.uint32, np.uint8, np.uint8, np.int32, np.int16]] = List()
+    midi_events: list[tuple[np.uint32, np.uint8, np.uint8, np.int32, np.int16, np.uint8, np.uint8]] = List()
     track_name = b""
     tick = np.uint32(0)
-    numerator = 4
-    denominator = 4
-    clocks_per_click = 24
-    notated_32nd_notes_per_beat = 8
+
     lyrics = []
 
     while offset < track_end:
@@ -287,17 +293,33 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
 
             if meta_type == 0x51:  # Set Tempo event
                 current_tempo = (meta_data[0] << 16) | (meta_data[1] << 8) | meta_data[2]
-                midi_events.append((tick, np.uint8(5), np.uint8(0), np.int32(current_tempo), np.int16(0)))
+                midi_events.append(
+                    (tick, np.uint8(5), np.uint8(0), np.int32(current_tempo), np.int16(0), np.uint8(0), np.uint8(0))
+                )
 
             # time signature
             elif meta_type == 0x58:
                 assert meta_length == 4, "Time signature meta event has wrong length"
+                # assert numerator == 0 and denominator == 0, "Multiple time signatures not supported"
                 (
                     numerator,
-                    denominator,
+                    denominator_power_of_2,
                     clocks_per_click,
                     notated_32nd_notes_per_beat,
                 ) = meta_data
+
+                midi_events.append(
+                    (
+                        tick,
+                        np.uint8(10),
+                        np.uint8(0),
+                        np.int32(numerator),
+                        np.int16(denominator_power_of_2),
+                        np.uint8(clocks_per_click),
+                        np.uint8(notated_32nd_notes_per_beat),
+                    )
+                )
+
             # track name
             elif meta_type == 0x59:
                 # sharps = meta_data[0]
@@ -315,7 +337,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
                 # Lyric event
                 pass
             elif meta_type == 0x2F:  # End of track
-                midi_events.append((tick, np.uint8(9), np.uint8(0), np.int32(0), np.int16(0)))
+                midi_events.append((tick, np.uint8(9), np.uint8(0), np.int32(0), np.int16(0), np.uint8(0), np.uint8(0)))
 
         elif status_byte == 0xF0:  # SysEx event
             # System Exclusive (aka SysEx) messages are used to send device specific data.
@@ -347,38 +369,38 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
             if message_type == 0x9:  # Note On
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(0), channel, pitch, velocity))
+                midi_events.append((tick, np.uint8(0), channel, pitch, velocity, np.uint8(0), np.uint8(0)))
 
             elif message_type == 0x8:  # Note Off
                 pitch, velocity = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(1), channel, pitch, velocity))
+                midi_events.append((tick, np.uint8(1), channel, pitch, velocity, np.uint8(0), np.uint8(0)))
 
             elif message_type == 0xB:  # Control Change
                 number, value = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(3), channel, number, value))
+                midi_events.append((tick, np.uint8(3), channel, number, value, np.uint8(0), np.uint8(0)))
 
             elif message_type == 0xC:  # program change
                 program = np.int32(data[offset])
-                midi_events.append((tick, np.uint8(4), channel, program, np.int16(0)))
+                midi_events.append((tick, np.uint8(4), channel, program, np.int16(0), np.uint8(0), np.uint8(0)))
                 offset += 1
 
             elif message_type == 0xE:  # Pitch Bend
                 value = decode_pitch_bend(data[offset : offset + 2])
                 assert value >= -8192 and value <= 8191, "Pitch bend value out of range"
-                midi_events.append((tick, np.uint8(2), channel, value, np.int16(0)))
+                midi_events.append((tick, np.uint8(2), channel, value, np.int16(0), np.uint8(0), np.uint8(0)))
                 offset += 2
 
             elif message_type == 0xA:  # Polyphonic Aftertouch
                 pitch, pressure = unpack_uint8_pair(data[offset : offset + 2])
                 offset += 2
-                midi_events.append((tick, np.uint8(7), channel, pitch, pressure))
+                midi_events.append((tick, np.uint8(7), channel, pitch, pressure, np.uint8(0), np.uint8(0)))
 
             elif message_type == 0xD:  # Channel Aftertouch
                 pressure = data[offset]
                 offset += 1
-                midi_events.append((tick, np.uint8(6), channel, pressure, np.int16(0)))
+                midi_events.append((tick, np.uint8(6), channel, pressure, np.int16(0), np.uint8(0), np.uint8(0)))
             else:
                 offset += 1
 
@@ -393,15 +415,13 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
         midi_events_np[i]["channel"] = event[2]
         midi_events_np[i]["value1"] = event[3]
         midi_events_np[i]["value2"] = event[4]
+        midi_events_np[i]["value3"] = event[5]
+        midi_events_np[i]["value4"] = event[6]
 
     return (
         offset,
         midi_events_np,
         track_name,
-        numerator,
-        denominator,
-        clocks_per_click,
-        notated_32nd_notes_per_beat,
         lyrics,
     )
 
@@ -432,6 +452,10 @@ def load_midi_bytes(data: bytes) -> Midi:
     offset = 14  # Header size is fixed at 14 bytes
 
     tracks = []
+    tracks_names = []
+    tracks_lyrics = []
+    tracks_events = []
+
     for _ in range(num_tracks):
         if np.any(data[offset : offset + 4] != b"MTrk"):
             raise ValueError("Invalid track chunk")
@@ -439,27 +463,28 @@ def load_midi_bytes(data: bytes) -> Midi:
             offset,
             midi_events_np,
             track_name,
-            numerator,
-            denominator,
-            clocks_per_click,
-            notated_32nd_notes_per_beat,
             lyrics,
         ) = _parse_midi_track(data, offset)
 
-        name = text_decode(track_name)
+        tracks_names.append(text_decode(track_name))
         lyrics = [(tick, text_decode(lyric)) for tick, lyric in lyrics] if lyrics else None
+        tracks_lyrics.append(lyrics)
+        tracks_events.append(EventArray(midi_events_np))
+
+    # modify the tracks to have the same time signature
+    for name, lyrics, events in zip(tracks_names, tracks_lyrics, tracks_events, strict=False):
         track = MidiTrack(
             name=name,
             lyrics=lyrics,
-            events=EventArray(midi_events_np),
-            time_signature=(numerator, denominator),
-            clocks_per_click=clocks_per_click,
-            notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
+            events=events,
         )
         # assert len(midi_events_np)>0, "Track must have at least one event"
         tracks.append(track)
 
-    return Midi(tracks=tracks, ticks_per_quarter=ticks_per_quarter)
+    return Midi(
+        tracks=tracks,
+        ticks_per_quarter=ticks_per_quarter,
+    )
 
 
 def sort_midi_events(midi_events: EventArray) -> EventArray:
@@ -487,10 +512,6 @@ def encode_delta_time(delta_time: int) -> List:
 def _encode_midi_track(track: MidiTrack) -> bytes:
     data = _encode_midi_track_numba(
         track.name.encode("utf-8"),  # Pre-encode the name to bytes
-        track.time_signature[0],
-        track.time_signature[1],
-        track.clocks_per_click,
-        track.notated_32nd_notes_per_beat,
         track.events._data,
     )
     return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
@@ -499,10 +520,6 @@ def _encode_midi_track(track: MidiTrack) -> bytes:
 @njit(cache=True, boundscheck=False)
 def _encode_midi_track_numba(
     name: bytes,
-    numerator: int,
-    denominator: int,
-    clocks_per_click: int,
-    notated_32nd_notes_per_beat: int,
     events: np.ndarray,
 ) -> np.ndarray:
     """Encodes a MIDI track to bytes."""
@@ -513,10 +530,6 @@ def _encode_midi_track_numba(
     data.extend([0xFF, 0x03, len(name)])
     data.extend(name)
 
-    # Add time signature
-    data.extend(encode_delta_time(0))
-    data.extend([0xFF, 0x58, 4, numerator, denominator, clocks_per_click, notated_32nd_notes_per_beat])
-
     tick = np.uint32(0)
     for event in events:
         delta_time = event["tick"] - tick
@@ -525,6 +538,8 @@ def _encode_midi_track_numba(
         channel = event["channel"]
         value1 = event["value1"]
         value2 = event["value2"]
+        value3 = event["value3"]
+        value4 = event["value4"]
 
         data.extend(encode_delta_time(delta_time))  # Delta time for the event
 
@@ -553,6 +568,9 @@ def _encode_midi_track_numba(
         elif event_type == 9:
             # End of track
             data.extend([0xFF, 0x2F, 0])
+        elif event_type == 10:
+            # Time Signature Change
+            data.extend([0xFF, 0x58, 4, value1, value2, value3, value4])
         else:
             raise ValueError(f"Invalid event type: {event_type}")
 
@@ -588,7 +606,4 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
         sorted_events1 = sort_midi_events(track1.events)
         sorted_events2 = sort_midi_events(track2.events)
         assert track1.name == track2.name
-        assert track1.time_signature == track2.time_signature
-        assert track1.clocks_per_click == track2.clocks_per_click
-        assert track1.notated_32nd_notes_per_beat == track2.notated_32nd_notes_per_beat
         assert np.all(sorted_events1._data == sorted_events2._data)

@@ -15,6 +15,7 @@ from numba_midi.score import (
     PedalArray,
     PitchBendArray,
     Score,
+    SignatureArray,
     TempoArray,
     times_to_ticks,
     Track,
@@ -31,11 +32,8 @@ class PianoRoll:
     num_bin_per_semitone: int
     programs: list[int]
     track_names: list[str]
-
+    time_signature: SignatureArray
     ticks_per_quarter: int = 480
-    time_signature: tuple[int, int] = (4, 4)
-    clocks_per_click: int = 24
-    notated_32nd_notes_per_beat: int = 8
     midi_track_ids: Optional[list[int | None]] = None
     channels: Optional[list[int | None]] = None
     tempo: Optional[TempoArray] = None
@@ -189,8 +187,6 @@ def score_to_piano_roll(
         midi_track_ids=[track.midi_track_id for track in score.tracks],
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
-        notated_32nd_notes_per_beat=score.notated_32nd_notes_per_beat,
-        clocks_per_click=score.clocks_per_click,
         tempo=score.tempo,
         track_names=[track.name for track in score.tracks],
     )
@@ -316,7 +312,5 @@ def piano_roll_to_score(
         duration=piano_roll.duration,
         time_signature=piano_roll.time_signature,
         tempo=tempo,
-        clocks_per_click=piano_roll.clocks_per_click,
         ticks_per_quarter=piano_roll.ticks_per_quarter,
-        notated_32nd_notes_per_beat=piano_roll.notated_32nd_notes_per_beat,
     )

@@ -9,6 +9,7 @@ from numba_midi.score import (
     NoteArray,
     PitchBendArray,
     Score,
+    SignatureArray,
     TempoArray,
     Track,
 )
@@ -57,33 +58,33 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
         assert len(midi.time_signature_changes) <= 1, "Only one time signature change is supported"
 
         tracks.append(track)
-    if len(midi.time_signature_changes) == 1:
-        numerator = midi.time_signature_changes[0].numerator
-        denominator = midi.time_signature_changes[0].denominator
-    else:
-        # default to 4/4 if no time signature changes are found
-        numerator = 4
-        denominator = 4
+
     ticks_per_quarter = midi.resolution
     tempo_change_times, tempi = midi.get_tempo_changes()
     tempo = TempoArray.zeros(len(tempo_change_times))
 
-    clocks_per_click = 0  # Looks like we don't have this information in pretty_midi
-    notated_32nd_notes_per_beat = 0  # Looks like we don't have this information in pretty_midi
+    clocks_per_click = 24  # Looks like we don't have this information in pretty_midi
+    notated_32nd_notes_per_beat = 8  # Looks like we don't have this information in pretty_midi
 
     tempo.time = tempo_change_times
     tempo.bpm = tempi
     # 60.0/(midi._tick_scales[0][1]*midi.resolution)
     tempo.tick = np.array([midi.time_to_tick(t) for t in tempo_change_times])
 
+    time_signatures = SignatureArray(
+        numerator=[event.numerator for event in midi.time_signature_changes],
+        denominator=[event.denominator for event in midi.time_signature_changes],
+        tick=[midi.time_to_tick(event.time) for event in midi.time_signature_changes],
+        time=[event.time for event in midi.time_signature_changes],
+        clocks_per_click=[clocks_per_click],
+        notated_32nd_notes_per_beat=[notated_32nd_notes_per_beat],
+    )
     score = Score(
         tracks=tracks,
         duration=midi.get_end_time(),
-        time_signature=(numerator, denominator),
+        time_signature=time_signatures,
         tempo=tempo,
-        clocks_per_click=clocks_per_click,
         ticks_per_quarter=ticks_per_quarter,
-        notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
     )
     return score
 
@@ -134,12 +135,13 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
             )
         midi.instruments.append(instrument)
     # Set the time signature
-    midi.time_signature_changes.append(
-        pretty_midi.TimeSignature(
-            numerator=score.time_signature[0],
-            denominator=score.time_signature[1],
-            time=0,
+    for time_signature in score.time_signature:
+        midi.time_signature_changes.append(
+            pretty_midi.TimeSignature(
+                numerator=int(time_signature.numerator),
+                denominator=int(time_signature.denominator),
+                time=float(time_signature.time),
+            )
         )
-    )
 
     return midi

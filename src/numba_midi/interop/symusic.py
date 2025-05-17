@@ -2,6 +2,7 @@
 
 import numpy as np
 import symusic
+import symusic.types
 
 from numba_midi.score import (
     ControlArray,
@@ -9,12 +10,13 @@ from numba_midi.score import (
     PedalArray,
     PitchBendArray,
     Score,
+    SignatureArray,
     TempoArray,
     Track,
 )
 
 
-def from_symusic(symusic_score: symusic.Score) -> Score:
+def from_symusic(symusic_score: symusic.types.Score) -> Score:
     """Convert a symusic object to a Numba-compatible format."""
     tracks = []
     score_ticks = symusic_score.to(symusic.TimeUnit.tick)
@@ -88,20 +90,26 @@ def from_symusic(symusic_score: symusic.Score) -> Score:
     clocks_per_click = 0
     notated_32nd_notes_per_beat = 0
 
+    time_signature = SignatureArray(
+        time=[0],
+        tick=[0],
+        numerator=[numerator],
+        denominator=[denominator],
+        clocks_per_click=[clocks_per_click],
+        notated_32nd_notes_per_beat=[notated_32nd_notes_per_beat],
+    )
     score = Score(
         tracks=tracks,
         duration=score_seconds.end(),
-        time_signature=(numerator, denominator),
         tempo=tempo,
-        clocks_per_click=clocks_per_click,
-        ticks_per_quarter=score_seconds.ticks_per_quarter,
-        notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
+        time_signature=time_signature,
+        ticks_per_quarter=symusic_score.ticks_per_quarter,
     )
 
     return score
 
 
-def to_symusic(score: Score) -> symusic.Score:
+def to_symusic(score: Score) -> symusic.types.Score:
     """Convert a Numba-compatible score to a symusic object."""
     tracks = []
 
@@ -135,9 +143,13 @@ def to_symusic(score: Score) -> symusic.Score:
 
     symusic_score = symusic.Score()
     symusic_score.ticks_per_quarter = score.ticks_per_quarter
-    symusic_score.time_signatures.append(
-        symusic.TimeSignature(time=0, numerator=score.time_signature[0], denominator=score.time_signature[1])
+    # TODO : Add support for multiple time signatures
+    symusic_score.time_signatures = symusic.TimeSignature.from_numpy(
+        time=score.time_signature.tick.astype(np.int32),
+        numerator=score.time_signature.numerator.astype(np.int8),
+        denominator=score.time_signature.denominator.astype(np.int8),
     )
+
     symusic_score.tempos = tempo
     symusic_score.tracks.extend(tracks)
     return symusic_score

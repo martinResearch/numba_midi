@@ -1012,19 +1012,21 @@ class Score:
 
     def get_beat_positions(self) -> np.ndarray:
         """Get the beat positions in seconds."""
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
+        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator
         # Compute the beat positions in seconds using the tempo
-        beat_ticks = np.arange(0, self.last_tick(), ticks_per_beat)
+        beat_ticks = np.cumsum(ticks_per_beat)
+        beat_ticks = np.insert(beat_ticks, 0, 0)
         beat_time = ticks_to_times(beat_ticks, self.tempo, self.ticks_per_quarter)
         return beat_time
 
     def get_bar_positions(self) -> np.ndarray:
         """Get the bar positions in seconds."""
         # get the bar position taking the time_signature into account
-        tick_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[0]
-        beat_per_bar = self.time_signature.numerator[0]
+        tick_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator
+        beat_per_bar = self.time_signature.numerator
         ticks_per_bar = tick_per_beat * beat_per_bar
-        bar_ticks = np.arange(0, self.last_tick(), ticks_per_bar)
+        bar_ticks = np.cumsum(ticks_per_bar)
+        bar_ticks = np.insert(bar_ticks, 0, 0)  # Add the first bar at time 0
         bar_time = ticks_to_times(bar_ticks, self.tempo, self.ticks_per_quarter)
         return bar_time
 

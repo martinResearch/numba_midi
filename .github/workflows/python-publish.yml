@@ -10,8 +10,15 @@ permissions:
   id-token: write
   
 jobs:
+  # Add a job to run tests directly before allowing publish
+  verify-tests:
+    uses: ./.github/workflows/run-tests.yml
+    with:
+      python-version: '["3.11"]'  # Run with a single version to be faster
+  
   pypi-publish:
     name: upload release to PyPI
+    needs: verify-tests  # This makes publish job wait for verify-tests to succeed
     runs-on: ubuntu-latest
     # Specifying a GitHub environment is optional, but strongly encouraged
     environment: release

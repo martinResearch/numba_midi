@@ -1270,12 +1270,17 @@ class Score:
         """Convert quarter notes to time."""
         assert len(quarter_notes) > 0, "Quarter notes must be a non-empty array"
         # Compute the positions in time
-        return self.ticks_to_quarter_notes(self.quarter_notes_to_ticks(quarter_notes))
+        return self.ticks_to_times(self.quarter_notes_to_ticks(quarter_notes))
+
+    def quarter_note_to_time(self, quarter_note: float) -> float:
+        """Convert a quarter note to time."""
+        assert quarter_note >= 0, "Quarter note must be non-negative"
+        return float(self.quarter_notes_to_times(np.array([quarter_note]))[0])
 
     def times_to_quarter_notes(self, times: np.ndarray) -> np.ndarray:
         """Convert times to quarter notes."""
         assert times.ndim == 1, "Input must be a 1D array"
-        return self.ticks_to_quarter_notes(self.times_to_ticks(times))
+        return self.ticks_to_quarter_notes(self.times_to_ticks(times).astype(np.float32))
 
     def time_to_quarter_note(self, time: float) -> float:
         """Convert time to quarter note."""
@@ -1299,17 +1304,18 @@ class Score:
         assert subdivision > 0, "Subdivision must be positive"
         quarter_notes = self.times_to_quarter_notes(times)
         # Quantize the beats to the nearest step
-        quantized_quarter_notes = np.round(quarter_notes * 4 / subdivision) * (subdivision / 4)
+        quantized_quarter_notes = np.round(quarter_notes * subdivision / 4) * (4 / subdivision)
         # Convert the quantized beats back to time
         quantized_times = self.quarter_notes_to_times(quantized_quarter_notes)
         return quantized_times
 
     def quantize_time(self, time: float, subdivision: int) -> float:
-        """Quantize the score to the notes subdivision factor.        
+        """Quantize the score to the notes subdivision factor.
+
         subdivision==4 means quarter notes
         subdivision==8 means eighth notes
         subdivision==16 means sixteenth notes
-        """      
+        """
         return float(self.quantize_times(np.array([time]), subdivision)[0])
 
 

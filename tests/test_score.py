@@ -85,7 +85,6 @@ def test_signature() -> None:
         # taking the signature denominator into account
         # While people often confusingly refer to the number of quarter
         # notes per minute as the BPM
-
         expected_bpm = get_bpm_from_quarter_notes_per_minute(quarter_notes_per_minute, numerator, denominator)
         bpm = 60.0 / (beat[1] - beat[0])
         assert np.isclose(bpm, expected_bpm), f"Expected {expected_bpm}, got {bpm}"

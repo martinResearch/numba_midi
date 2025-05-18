@@ -212,16 +212,43 @@ def beats_per_bar(numerator: int, denominator: int) -> int:
 
 
 @njit(cache=True, boundscheck=False)
+def quarter_notes_per_beat_jit(numerator: int, denominator: int) -> float:
+    """
+    Compute how many quarter notes are in one beat,
+    based on the time signature.
+
+    Args:
+        numerator (int): top number of time signature (e.g., 12 in 12/8)
+        denominator (int): bottom number of time signature (e.g., 8 in 12/8)
+
+    Returns:
+        float: number of quarter notes per beat
+    """
+    # 1 beat = note value defined by denominator
+    note_value_in_quarter_notes = 4 / denominator
+
+    # Detect compound meter (e.g., 6/8, 9/8, 12/8)
+    if numerator % 3 == 0 and denominator == 8:
+        # Each beat = 3 eighth notes = 1.5 quarter notes
+        return 1.5
+    else:
+        # Simple meter: 1 beat = denominator note value
+        return note_value_in_quarter_notes
+
+
+@njit(cache=True, boundscheck=False)
 def get_beat_and_bar_ticks_jit(
     ticks_per_quarter: int, last_tick: int, time_signature: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """Get the beat and bar ticks from the time signature."""
-    ticks_per_beat = ticks_per_quarter * 4 // time_signature["denominator"]
+    current_ticks_per_beat = ticks_per_quarter * quarter_notes_per_beat_jit(
+        time_signature["numerator"][0], time_signature["denominator"][0]
+    )
     beat = 0
     tick = 0
     bar = 0
     i_signature = 0
-    current_ticks_per_beat = ticks_per_beat[0]
+
     beat_ticks = [0]
     bar_ticks = [0]
     while True:
@@ -240,7 +267,9 @@ def get_beat_and_bar_ticks_jit(
             bar_ticks.append(tick)
         if i_signature + 1 < len(time_signature["tick"]) and tick >= time_signature["tick"][i_signature + 1]:
             i_signature += 1
-            current_ticks_per_beat = ticks_per_beat[i_signature]
+            current_ticks_per_beat = ticks_per_quarter * quarter_notes_per_beat_jit(
+                time_signature["numerator"][i_signature], time_signature["denominator"][i_signature]
+            )
 
     bar_ticks_np = np.array(bar_ticks)
     beat_ticks_np = np.array(beat_ticks)

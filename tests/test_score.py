@@ -15,6 +15,7 @@ from numba_midi.score import (
     TempoArray,
     Track,
 )
+from numba_midi.utils import get_bar_duration, get_bpm_from_quarter_notes_per_minute
 
 
 def test_get_beat_positions() -> None:
@@ -34,7 +35,7 @@ def test_get_beat_positions() -> None:
 
 def test_signature() -> None:
     # in midi the bmp
-    signatures = [(4, 4), (2, 2), (2, 4), (3, 4), (3, 8), (6, 8), (9, 8), (12, 8)]
+    signatures = [(12, 8), (4, 4), (2, 2), (2, 4), (3, 4), (3, 8), (6, 8), (9, 8)]
 
     quarter_notes_per_minute = 60.0
     for signature in signatures:
@@ -84,15 +85,15 @@ def test_signature() -> None:
         # taking the signature denominator into account
         # While people often confusingly refer to the number of quarter
         # notes per minute as the BPM
-        expected_bpm = quarter_notes_per_minute * denominator / 4
+
+        expected_bpm = get_bpm_from_quarter_notes_per_minute(quarter_notes_per_minute, numerator, denominator)
         bpm = 60.0 / (beat[1] - beat[0])
         assert np.isclose(bpm, expected_bpm), f"Expected {expected_bpm}, got {bpm}"
 
-
-# 1
-#         assert np.allclose(beat, np.arange(0, len(beat)))
-#         assert np.allclose(bar, np.arange(0, len(bar)) * numerator)
-#         assert np.allclose(notes.duration_tick, np.array([480]))
+        expected_bar_duration = get_bar_duration(quarter_notes_per_minute, numerator, denominator)
+        assert np.isclose(bar[1] - bar[0], expected_bar_duration), (
+            f"Expected {expected_bar_duration}, got {bar[1] - bar[0]}"
+        )
 
 
 if __name__ == "__main__":

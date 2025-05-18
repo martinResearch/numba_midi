@@ -215,8 +215,8 @@ def beats_per_bar(numerator: int, denominator: int) -> int:
 def get_beat_and_bar_ticks_jit(
     ticks_per_quarter: int, last_tick: int, time_signature: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    quarter_notes_per_beat = 4 // time_signature["denominator"]
-    ticks_per_beat = ticks_per_quarter * quarter_notes_per_beat
+    """Get the beat and bar ticks from the time signature."""
+    ticks_per_beat = ticks_per_quarter * 4 // time_signature["denominator"]
     beat = 0
     tick = 0
     bar = 0

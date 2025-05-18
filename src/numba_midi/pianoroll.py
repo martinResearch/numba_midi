@@ -256,7 +256,7 @@ def piano_roll_to_score(
 
     if piano_roll.tempo is None:
         # default tempo is 120 BPM
-        tempo = TempoArray(time=[0], tick=[0], bpm=[120])
+        tempo = TempoArray(time=[0], tick=[0], quater_notes_per_minute=[120])
     else:
         tempo = piano_roll.tempo
     for track_id in range(piano_roll_semitone.shape[0]):

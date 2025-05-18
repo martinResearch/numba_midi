@@ -194,18 +194,29 @@ def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
             tempo_event = tempo[last_tempo_event]
             ref_time = ref_time + (tempo_event["tick"] - ref_tick) * second_per_tick
             ref_tick = tempo_event["tick"]
-            bpm = tempo_event["bpm"]
-            second_per_tick = 60.0 / (bpm * ticks_per_quarter)  # seconds per tick
+            quater_notes_per_minute = tempo_event["quater_notes_per_minute"]
+            second_per_tick = 60.0 / (quater_notes_per_minute * ticks_per_quarter)  # seconds per tick
 
         time = ref_time + (tick - ref_tick) * second_per_tick
         tempo[i]["time"] = time
 
 
 @njit(cache=True, boundscheck=False)
+def beats_per_bar(numerator: int, denominator: int) -> int:
+    if numerator % 3 == 0 and denominator == 8:
+        # Assume it's compound meter
+        return numerator // 3
+    else:
+        # Simple meter
+        return numerator
+
+
+@njit(cache=True, boundscheck=False)
 def get_beat_and_bar_ticks_jit(
     ticks_per_quarter: int, last_tick: int, time_signature: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    ticks_per_beat = ticks_per_quarter * 4 // time_signature["denominator"]
+    quarter_notes_per_beat = 4 // time_signature["denominator"]
+    ticks_per_beat = ticks_per_quarter * quarter_notes_per_beat
     beat = 0
     tick = 0
     bar = 0
@@ -219,7 +230,11 @@ def get_beat_and_bar_ticks_jit(
         beat += 1
         tick += current_ticks_per_beat
         beat_ticks.append(tick)
-        if beat >= time_signature["numerator"][i_signature]:
+        beat_per_bar = beats_per_bar(
+            time_signature["numerator"][i_signature], time_signature["denominator"][i_signature]
+        )
+
+        if beat >= beat_per_bar:
             bar += 1
             beat = 0
             bar_ticks.append(tick)

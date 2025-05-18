@@ -67,7 +67,7 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     notated_32nd_notes_per_beat = 8  # Looks like we don't have this information in pretty_midi
 
     tempo.time = tempo_change_times
-    tempo.bpm = tempi
+    tempo.quater_notes_per_minute = tempi
     # 60.0/(midi._tick_scales[0][1]*midi.resolution)
     tempo.tick = np.array([midi.time_to_tick(t) for t in tempo_change_times])
 
@@ -98,7 +98,7 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
     for tempo in score.tempo:
         # look like pretty_midi does not have a way to set the tempo changes
         # through its exposed API
-        tick_scale = 60.0 / (tempo.bpm * midi.resolution)
+        tick_scale = 60.0 / (tempo.quater_notes_per_minute * midi.resolution)
         midi._tick_scales.append((int(tempo.tick), tick_scale))
     # Create list that maps ticks to time in seconds
     midi._update_tick_to_time(score.last_tick())

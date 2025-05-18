@@ -83,7 +83,7 @@ def from_symusic(symusic_score: symusic.types.Score) -> Score:
     tempo_tick_numpy = score_ticks.tempos.numpy()
     tempo = TempoArray.zeros(len(score_seconds.tempos))
     tempo.time = tempos_sec_numpy["time"]
-    tempo.bpm = 60000000 / tempo_tick_numpy["mspq"]
+    tempo.quater_notes_per_minute = 60000000 / tempo_tick_numpy["mspq"]
     tempo.tick = tempo_tick_numpy["time"]
 
     # Note sure where to find this in the symusic object
@@ -114,7 +114,7 @@ def to_symusic(score: Score) -> symusic.types.Score:
     tracks = []
 
     tempo = symusic.Tempo.from_numpy(
-        time=score.tempo.tick.astype(np.int32), mspq=(60000000 / score.tempo.bpm).astype(np.int32)
+        time=score.tempo.tick.astype(np.int32), mspq=(60000000 / score.tempo.quater_notes_per_minute).astype(np.int32)
     )
 
     for track in score.tracks:

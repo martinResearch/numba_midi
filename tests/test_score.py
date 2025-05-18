@@ -5,7 +5,16 @@ from pathlib import Path
 
 import numpy as np
 
-from numba_midi.score import load_score
+from numba_midi.score import (
+    ControlArray,
+    load_score,
+    PedalArray,
+    PitchBendArray,
+    Score,
+    SignatureArray,
+    TempoArray,
+    Track,
+)
 
 
 def test_get_beat_positions() -> None:
@@ -23,6 +32,70 @@ def test_get_beat_positions() -> None:
         assert np.all(np.diff(bar) > 0)
 
 
+def test_signature() -> None:
+    # in midi the bmp
+    signatures = [(4, 4), (2, 2), (2, 4), (3, 4), (3, 8), (6, 8), (9, 8), (12, 8)]
+
+    quater_notes_per_minute = 60.0
+    for signature in signatures:
+        numerator, denominator = signature
+
+        print(f"Testing signature with numerator={numerator}, denominator={denominator}")
+        time_signature = SignatureArray(
+            numerator=[numerator],
+            denominator=[denominator],
+            tick=[0],
+            time=[0.0],
+            clocks_per_click=[24],
+            notated_32nd_notes_per_beat=[8],
+        )
+        tempo = TempoArray(
+            tick=[0],
+            time=[0.0],
+            quater_notes_per_minute=[quater_notes_per_minute],
+        )
+        score = Score(ticks_per_quarter=480, time_signature=time_signature, tempo=tempo, duration=10, tracks=[])
+        notes = score.create_notes(
+            start=np.array([0]),
+            duration=np.array([1]),
+            pitch=np.array([60]),
+            velocity=np.array([100]),
+        )
+
+        track = Track(
+            program=0,
+            is_drum=False,
+            name="Track 1",
+            notes=notes,
+            controls=ControlArray.zeros(0),
+            pitch_bends=PitchBendArray.zeros(0),
+            pedals=PedalArray.zeros(0),
+        )
+        score.add_track(track)
+
+        print(score)
+        beat, bar = score.get_beat_and_bar_times()
+        print("Beat positions:", beat)
+        print("Bar positions:", bar)
+        assert len(beat) > 0
+        assert len(bar) > 0
+
+        # calculating the musical BPM i.e number of beat per minute and
+        # taking the signature denominator into account
+        # While people often confusingly refer to the number of quarter
+        # notes per minute as the BPM
+        expected_bpm = quater_notes_per_minute * denominator / 4
+        bpm = 60.0 / (beat[1] - beat[0])
+        assert np.isclose(bpm, expected_bpm), f"Expected {expected_bpm}, got {bpm}"
+
+
+# 1
+#         assert np.allclose(beat, np.arange(0, len(beat)))
+#         assert np.allclose(bar, np.arange(0, len(bar)) * numerator)
+#         assert np.allclose(notes.duration_tick, np.array([480]))
+
+
 if __name__ == "__main__":
+    test_signature()
     test_get_beat_positions()
     print("All tests passed.")

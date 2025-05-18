@@ -217,6 +217,7 @@ def get_subdivision_per_beat(time_signature: np.ndarray) -> np.ndarray:
     return out
 
 
+@njit(cache=True, boundscheck=False)
 def get_tick_per_subdivision(ticks_per_quarter: int, time_signature: np.ndarray) -> np.ndarray:
     """Get the tick per subdivision from the time signature."""
     return ticks_per_quarter * 4 / time_signature["denominator"]

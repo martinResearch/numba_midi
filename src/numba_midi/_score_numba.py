@@ -202,75 +202,67 @@ def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
 
 
 @njit(cache=True, boundscheck=False)
-def beats_per_bar(numerator: int, denominator: int) -> int:
-    if numerator % 3 == 0 and denominator == 8:
-        # Assume it's compound meter
-        return numerator // 3
-    else:
-        # Simple meter
-        return numerator
+def get_beats_per_bar(time_signature: np.ndarray) -> np.ndarray:
+    """Get the number of beats per bar from the time signature."""
+    compound_meter = (time_signature["numerator"] % 3 == 0) & (time_signature["denominator"] == 8)
+    out = np.where(compound_meter, time_signature["numerator"] // 3, time_signature["numerator"])
+    return out
 
 
 @njit(cache=True, boundscheck=False)
-def quarter_notes_per_beat_jit(numerator: int, denominator: int) -> float:
-    """
-    Compute how many quarter notes are in one beat,
-    based on the time signature.
+def get_subdivision_per_beat(time_signature: np.ndarray) -> np.ndarray:
+    """Get the subdivision per beat from the time signature."""
+    compound_meter = (time_signature["numerator"] % 3 == 0) & (time_signature["denominator"] == 8)
+    out = np.where(compound_meter, 3, 1)
+    return out
 
-    Args:
-        numerator (int): top number of time signature (e.g., 12 in 12/8)
-        denominator (int): bottom number of time signature (e.g., 8 in 12/8)
 
-    Returns:
-        float: number of quarter notes per beat
-    """
-    # 1 beat = note value defined by denominator
-    note_value_in_quarter_notes = 4 / denominator
-
-    # Detect compound meter (e.g., 6/8, 9/8, 12/8)
-    if numerator % 3 == 0 and denominator == 8:
-        # Each beat = 3 eighth notes = 1.5 quarter notes
-        return 1.5
-    else:
-        # Simple meter: 1 beat = denominator note value
-        return note_value_in_quarter_notes
+def get_tick_per_subdivision(ticks_per_quarter: int, time_signature: np.ndarray) -> np.ndarray:
+    """Get the tick per subdivision from the time signature."""
+    return ticks_per_quarter * 4 / time_signature["denominator"]
 
 
 @njit(cache=True, boundscheck=False)
-def get_beat_and_bar_ticks_jit(
+def get_subdivision_beat_and_bar_ticks_jit(
     ticks_per_quarter: int, last_tick: int, time_signature: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Get the beat and bar ticks from the time signature."""
-    current_ticks_per_beat = ticks_per_quarter * quarter_notes_per_beat_jit(
-        time_signature["numerator"][0], time_signature["denominator"][0]
-    )
     beat = 0
     tick = 0
     bar = 0
     i_signature = 0
 
+    subdivision_ticks = [0]
     beat_ticks = [0]
     bar_ticks = [0]
+
+    tick_per_subdivision_array = get_tick_per_subdivision(ticks_per_quarter, time_signature)
+    subdivision_per_beat_array = get_subdivision_per_beat(time_signature)
+    beat_per_bar_array = get_beats_per_bar(time_signature)
+    subdivision = 0
     while True:
         if tick >= last_tick:
             break
-        beat += 1
-        tick += current_ticks_per_beat
-        beat_ticks.append(tick)
-        beat_per_bar = beats_per_bar(
-            time_signature["numerator"][i_signature], time_signature["denominator"][i_signature]
-        )
 
-        if beat >= beat_per_bar:
+        tick += tick_per_subdivision_array[i_signature]
+        subdivision += 1
+        subdivision_ticks.append(tick)
+
+        if subdivision >= subdivision_per_beat_array[i_signature]:
+            beat += 1
+            subdivision = 0
+            # Add the tick to the beat ticks
+            beat_ticks.append(tick)
+
+        if beat >= beat_per_bar_array[i_signature]:
             bar += 1
             beat = 0
             bar_ticks.append(tick)
+
         if i_signature + 1 < len(time_signature["tick"]) and tick >= time_signature["tick"][i_signature + 1]:
             i_signature += 1
-            current_ticks_per_beat = ticks_per_quarter * quarter_notes_per_beat_jit(
-                time_signature["numerator"][i_signature], time_signature["denominator"][i_signature]
-            )
 
+    subdivision_ticks_np = np.array(subdivision_ticks)
     bar_ticks_np = np.array(bar_ticks)
     beat_ticks_np = np.array(beat_ticks)
-    return beat_ticks_np, bar_ticks_np
+    return subdivision_ticks_np, beat_ticks_np, bar_ticks_np

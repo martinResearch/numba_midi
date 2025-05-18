@@ -10,9 +10,9 @@ import numpy as np
 from numba_midi._score_numba import (
     _get_overlapping_notes_pairs_jit,
     extract_notes_start_stop_numba,
-    get_beat_and_bar_ticks_jit,
     get_events_program,
     get_pedals_from_controls_jit,
+    get_subdivision_beat_and_bar_ticks_jit,
     recompute_tempo_times,
 )
 from numba_midi.instruments import (
@@ -1012,15 +1012,18 @@ class Score:
             antialiasing=antialiasing,
         )
 
-    def get_beat_and_bar_ticks(self) -> tuple[np.ndarray, np.ndarray]:
-        return get_beat_and_bar_ticks_jit(self.ticks_per_quarter, self.last_tick(), self.time_signature._data)
+    def get_subdivision_beat_and_bar_ticks(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return get_subdivision_beat_and_bar_ticks_jit(
+            self.ticks_per_quarter, self.last_tick(), self.time_signature._data
+        )
 
-    def get_beat_and_bar_times(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_subdivision_beat_and_bar_times(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get the beat and bar times in seconds."""
-        beat_ticks, bar_ticks = self.get_beat_and_bar_ticks()
+        beat_ticks, bar_ticks, subdivision_ticks = self.get_subdivision_beat_and_bar_ticks()
         bar_time = ticks_to_times(bar_ticks, self.tempo, self.ticks_per_quarter)
         beat_time = ticks_to_times(beat_ticks, self.tempo, self.ticks_per_quarter)
-        return beat_time, bar_time
+        subdivision_time = ticks_to_times(subdivision_ticks, self.tempo, self.ticks_per_quarter)
+        return beat_time, bar_time, subdivision_time
 
     def save(self, file_path: str | Path) -> None:
         """Save the score to a MIDI file."""
@@ -1221,7 +1224,7 @@ class Score:
         """Convert time to beats."""
         assert len(time) > 0, "Time must be a non-empty array"
         # Compute the beat positions in seconds using the tempo
-        beat_ticks, _ = self.get_beat_and_bar_ticks()
+        _, beat_ticks, _ = self.get_subdivision_beat_and_bar_ticks()
         ticks = self.times_to_ticks(time)
         # Compute the  positions in beats
         beat_idx = np.searchsorted(beat_ticks, ticks, side="right") - 1
@@ -1240,7 +1243,7 @@ class Score:
         return float(self.times_to_beats(np.array([time]))[0])
 
     def beats_to_ticks(self, beats: np.ndarray) -> np.ndarray:
-        beat_ticks, _ = self.get_beat_and_bar_ticks()
+        _, beat_ticks, _ = self.get_subdivision_beat_and_bar_ticks()
         beats_floor = np.floor(beats).astype(np.int32)
         signature_idx = np.searchsorted(self.time_signature.time, beats, side="right") - 1
         ticks_per_beat = get_tick_per_beat_array(

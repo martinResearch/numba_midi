@@ -194,8 +194,8 @@ def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
             tempo_event = tempo[last_tempo_event]
             ref_time = ref_time + (tempo_event["tick"] - ref_tick) * second_per_tick
             ref_tick = tempo_event["tick"]
-            quater_notes_per_minute = tempo_event["quater_notes_per_minute"]
-            second_per_tick = 60.0 / (quater_notes_per_minute * ticks_per_quarter)  # seconds per tick
+            quarter_notes_per_minute = tempo_event["quarter_notes_per_minute"]
+            second_per_tick = 60.0 / (quarter_notes_per_minute * ticks_per_quarter)  # seconds per tick
 
         time = ref_time + (tick - ref_tick) * second_per_tick
         tempo[i]["time"] = time

@@ -48,7 +48,7 @@ pedal_dtype = np.dtype(
     [("time", np.float64), ("tick", np.int32), ("duration", np.float64), ("duration_tick", np.int32)]
 )
 pitch_bend_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("value", np.int32)])
-tempo_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("quater_notes_per_minute", np.float64)])
+tempo_dtype = np.dtype([("time", np.float64), ("tick", np.int32), ("quarter_notes_per_minute", np.float64)])
 signature_dtype = np.dtype(
     [
         ("time", np.float64),
@@ -777,15 +777,15 @@ class Tempo:
 
     time: float
     tick: int
-    quater_notes_per_minute: float
+    quarter_notes_per_minute: float
 
     def __post_init__(self) -> None:
         assert self.time >= 0, "Time must be non-negative"
         assert self.tick >= 0, "Tick must be non-negative"
-        assert self.quater_notes_per_minute > 0, "QNPM must be positive"
+        assert self.quarter_notes_per_minute > 0, "QNPM must be positive"
 
     def __repr__(self) -> str:
-        return f"Tempo(time={self.time}, tick={self.tick}, quater_notes_per_minute={self.quater_notes_per_minute})"
+        return f"Tempo(time={self.time}, tick={self.tick}, quarter_notes_per_minute={self.quarter_notes_per_minute})"
 
 
 class TempoArray:
@@ -795,18 +795,18 @@ class TempoArray:
         self,
         time: np.ndarray | list[float],
         tick: np.ndarray | list[int],
-        quater_notes_per_minute: np.ndarray | list[float],
+        quarter_notes_per_minute: np.ndarray | list[float],
     ) -> None:
         if isinstance(time, list):
             time = np.array(time, dtype=np.float64)
         if isinstance(tick, list):
             tick = np.array(tick, dtype=np.int32)
-        if isinstance(quater_notes_per_minute, list):
-            quater_notes_per_minute = np.array(quater_notes_per_minute, dtype=np.float64)
+        if isinstance(quarter_notes_per_minute, list):
+            quarter_notes_per_minute = np.array(quarter_notes_per_minute, dtype=np.float64)
         data = np.empty(len(time), dtype=tempo_dtype)
         data["time"] = time
         data["tick"] = tick
-        data["quater_notes_per_minute"] = quater_notes_per_minute
+        data["quarter_notes_per_minute"] = quarter_notes_per_minute
         self._data = data
 
     @classmethod
@@ -847,12 +847,12 @@ class TempoArray:
         self._data["tick"][:] = value
 
     @property
-    def quater_notes_per_minute(self) -> np.ndarray:
-        return self._data["quater_notes_per_minute"]
+    def quarter_notes_per_minute(self) -> np.ndarray:
+        return self._data["quarter_notes_per_minute"]
 
-    @quater_notes_per_minute.setter
-    def quater_notes_per_minute(self, value: np.ndarray) -> None:
-        self._data["quater_notes_per_minute"][:] = value
+    @quarter_notes_per_minute.setter
+    def quarter_notes_per_minute(self, value: np.ndarray) -> None:
+        self._data["quarter_notes_per_minute"][:] = value
 
     @overload
     def __getitem__(self, index: int) -> Tempo: ...
@@ -865,7 +865,7 @@ class TempoArray:
             return Tempo(
                 float(result["time"]),
                 int(result["tick"]),
-                float(result["quater_notes_per_minute"]),
+                float(result["quarter_notes_per_minute"]),
             )
         result = self._data[index]
         return TempoArray.from_array(result)  # Return new wrapper for slices or boolean arrays
@@ -885,7 +885,7 @@ class TempoArray:
 
     def __iter__(self) -> Generator[Tempo, None, None]:
         for i in range(len(self._data)):
-            yield Tempo(self.time[i], self.tick[i], self.quater_notes_per_minute[i])
+            yield Tempo(self.time[i], self.tick[i], self.quarter_notes_per_minute[i])
 
     def recompute_times(self, ticks_per_quarter: int) -> None:
         recompute_tempo_times(self._data, ticks_per_quarter)
@@ -1182,13 +1182,13 @@ class Score:
         else:
             track.pitch_bends = pitch_bends
 
-    def add_tempos(self, time: np.ndarray, quater_notes_per_minute: np.ndarray) -> None:
+    def add_tempos(self, time: np.ndarray, quarter_notes_per_minute: np.ndarray) -> None:
         """Add tempos to the score."""
-        assert len(time) == len(quater_notes_per_minute), "time and quater_notes_per_minute must have the same length"
+        assert len(time) == len(quarter_notes_per_minute), "time and quarter_notes_per_minute must have the same length"
         tempos = TempoArray.zeros(len(time))
         tempos.time = time
         tempos.tick = self.times_to_ticks(time)
-        tempos.quater_notes_per_minute = quater_notes_per_minute
+        tempos.quarter_notes_per_minute = quarter_notes_per_minute
         tempos = TempoArray.concatenate((self.tempo, tempos))
         self.tempo = tempos
         self._resort_tempo()
@@ -1374,7 +1374,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     tempo = TempoArray(
         time=tempo_events_times,
         tick=tempo_events.tick,
-        quater_notes_per_minute=60000000 / tempo_events.value1,
+        quarter_notes_per_minute=60000000 / tempo_events.value1,
     )
 
     # get all the signature events
@@ -1406,7 +1406,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     )
     # remove unnecessary tempo events
     if minimize_tempo:
-        tempo = tempo[np.hstack(([True], (np.diff(tempo.quater_notes_per_minute) != 0)))]
+        tempo = tempo[np.hstack(([True], (np.diff(tempo.quarter_notes_per_minute) != 0)))]
 
     lyrics = []
     for _, midi_track in enumerate(midi_score.tracks):
@@ -1594,7 +1594,7 @@ def score_to_midi(score: Score) -> Midi:
         events.tick[id_start : id_start + len(tempo)] = tempo.tick
         events.event_type[id_start : id_start + len(tempo)] = 5
         events.channel[id_start : id_start + len(tempo)] = 0
-        events.value1[id_start : id_start + len(tempo)] = 60000000 / tempo.quater_notes_per_minute
+        events.value1[id_start : id_start + len(tempo)] = 60000000 / tempo.quarter_notes_per_minute
         events.value2[id_start : id_start + len(tempo)] = 0
         id_start += len(tempo)
 
@@ -1604,7 +1604,7 @@ def score_to_midi(score: Score) -> Midi:
         tempo_events = EventArray.zeros(len(score.tempo))
         tempo_events.event_type[:] = 5
         tempo_events.channel[:] = 0
-        tempo_events.value1[:] = 60000000 / score.tempo.quater_notes_per_minute
+        tempo_events.value1[:] = 60000000 / score.tempo.quarter_notes_per_minute
         tempo_events.value2[:] = 0
         tempo_events.tick[:] = score.tempo.tick
 
@@ -2006,10 +2006,10 @@ def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> floa
         tempo_idx = int(np.searchsorted(tempo.time, time, side="right") - 1)
 
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    quater_notes_per_minute = tempo.quater_notes_per_minute[tempo_idx]
+    quarter_notes_per_minute = tempo.quarter_notes_per_minute[tempo_idx]
     ref_ticks = tempo.tick[tempo_idx]
     ref_time = tempo.time[tempo_idx]
-    quarter_per_second = quater_notes_per_minute / 60.0
+    quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return ref_ticks + (time - ref_time) * ticks_per_second
 
@@ -2019,10 +2019,10 @@ def tick_to_time(tick: float, tempo: TempoArray, ticks_per_quarter: int) -> floa
     # get the tempo at the start of the time range
     tempo_idx = np.searchsorted(tempo.tick, tick, side="right") - 1
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    quater_notes_per_minute = tempo.quater_notes_per_minute[tempo_idx]
+    quarter_notes_per_minute = tempo.quarter_notes_per_minute[tempo_idx]
     ref_ticks = tempo.tick[tempo_idx]
     ref_time = tempo.time[tempo_idx]
-    quarter_per_second = quater_notes_per_minute / 60.0
+    quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return ref_time + (tick - ref_ticks) / ticks_per_second
 
@@ -2032,10 +2032,10 @@ def ticks_to_times(tick: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) 
     # get the tempo at the start of the time range
     tempo_idx = np.searchsorted(tempo.tick, tick, side="right") - 1
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    quater_notes_per_minute = tempo.quater_notes_per_minute[tempo_idx]
+    quarter_notes_per_minute = tempo.quarter_notes_per_minute[tempo_idx]
     ref_ticks = tempo.tick[tempo_idx]
     ref_time = tempo.time[tempo_idx]
-    quarter_per_second = quater_notes_per_minute / 60.0
+    quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return ref_time + (tick - ref_ticks) / ticks_per_second
 
@@ -2048,10 +2048,10 @@ def times_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) 
     else:
         tempo_idx = np.zeros(len(time), dtype=np.int32)
     tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
-    quater_notes_per_minute = tempo.quater_notes_per_minute[tempo_idx]
+    quarter_notes_per_minute = tempo.quarter_notes_per_minute[tempo_idx]
     ref_ticks = tempo.tick[tempo_idx]
     ref_time = tempo.time[tempo_idx]
-    quarter_per_second = quater_notes_per_minute / 60.0
+    quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return (ref_ticks + (time - ref_time) * ticks_per_second).astype(np.int32)
 
@@ -2239,8 +2239,8 @@ def assert_scores_equal(
     assert score1.tempo.size == score2.tempo.size, "Different number of tempo events"
     assert np.all(score1.tempo.tick == score2.tempo.tick), "Different tick values for tempo events"
 
-    assert np.allclose(score1.tempo.quater_notes_per_minute, score2.tempo.quater_notes_per_minute, atol=1e-3), (
-        "Different quater_notes_per_minute values for tempo events"
+    assert np.allclose(score1.tempo.quarter_notes_per_minute, score2.tempo.quarter_notes_per_minute, atol=1e-3), (
+        "Different quarter_notes_per_minute values for tempo events"
     )
     assert np.allclose(score1.tempo.time, score2.tempo.time, atol=1e-3), "Different time values for tempo events"
     for track_id, (track1, track2) in enumerate(zip(tracks_1, tracks_2, strict=False)):

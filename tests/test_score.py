@@ -36,7 +36,7 @@ def test_signature() -> None:
     # in midi the bmp
     signatures = [(4, 4), (2, 2), (2, 4), (3, 4), (3, 8), (6, 8), (9, 8), (12, 8)]
 
-    quater_notes_per_minute = 60.0
+    quarter_notes_per_minute = 60.0
     for signature in signatures:
         numerator, denominator = signature
 
@@ -52,7 +52,7 @@ def test_signature() -> None:
         tempo = TempoArray(
             tick=[0],
             time=[0.0],
-            quater_notes_per_minute=[quater_notes_per_minute],
+            quarter_notes_per_minute=[quarter_notes_per_minute],
         )
         score = Score(ticks_per_quarter=480, time_signature=time_signature, tempo=tempo, duration=10, tracks=[])
         notes = score.create_notes(
@@ -84,7 +84,7 @@ def test_signature() -> None:
         # taking the signature denominator into account
         # While people often confusingly refer to the number of quarter
         # notes per minute as the BPM
-        expected_bpm = quater_notes_per_minute * denominator / 4
+        expected_bpm = quarter_notes_per_minute * denominator / 4
         bpm = 60.0 / (beat[1] - beat[0])
         assert np.isclose(bpm, expected_bpm), f"Expected {expected_bpm}, got {bpm}"
 

@@ -244,11 +244,11 @@ def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
 
 
 @njit(cache=True, boundscheck=False)
-def decode_pitch_bend(data: bytes) -> int:
+def decode_pitch_bend(data: bytes) -> np.int32:
     assert 0 <= data[0] <= 127
     assert 0 <= data[1] <= 127
     unsigned = (data[1] << 7) | data[0]
-    return unsigned - 8192
+    return np.int32(unsigned - 8192)
 
 
 @njit(cache=True, boundscheck=False)
@@ -389,7 +389,7 @@ def _parse_midi_track(data: bytes, offset: int) -> tuple:
             elif message_type == 0xE:  # Pitch Bend
                 value = decode_pitch_bend(data[offset : offset + 2])
                 assert value >= -8192 and value <= 8191, "Pitch bend value out of range"
-                midi_events.append((tick, np.uint8(2), channel, value, np.int16(0), np.uint8(0), np.uint8(0)))
+                midi_events.append((tick, np.uint8(2), channel, np.int32(value), np.int16(0), np.uint8(0), np.uint8(0)))
                 offset += 2
 
             elif message_type == 0xA:  # Polyphonic Aftertouch

@@ -204,15 +204,29 @@ def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
 @njit(cache=True, boundscheck=False)
 def get_beats_per_bar(time_signature: np.ndarray) -> np.ndarray:
     """Get the number of beats per bar from the time signature."""
-    compound_meter = (time_signature["numerator"] % 3 == 0) & (time_signature["denominator"] == 8)
+    compound_meter = is_compound_meter(time_signature)
     out = np.where(compound_meter, time_signature["numerator"] // 3, time_signature["numerator"])
     return out
+
+
+def is_compound_meter(time_signature: np.ndarray) -> np.ndarray:
+    """Check if the time signature is a compound meter.
+    a signature is a compound meter if all applies:
+    * the numerator is divisible by 3
+    * the numerator is greater than 3
+    * the denominator is 8 or 16.
+    """
+    return (
+        (time_signature["numerator"] % 3 == 0)
+        & (time_signature["numerator"] > 3)
+        & ((time_signature["denominator"] == 8) | (time_signature["denominator"] == 16))
+    )
 
 
 @njit(cache=True, boundscheck=False)
 def get_subdivision_per_beat(time_signature: np.ndarray) -> np.ndarray:
     """Get the subdivision per beat from the time signature."""
-    compound_meter = (time_signature["numerator"] % 3 == 0) & (time_signature["denominator"] == 8)
+    compound_meter = is_compound_meter(time_signature)
     out = np.where(compound_meter, 3, 1)
     return out
 

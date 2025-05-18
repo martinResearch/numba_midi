@@ -208,7 +208,7 @@ def get_beats_per_bar(time_signature: np.ndarray) -> np.ndarray:
     out = np.where(compound_meter, time_signature["numerator"] // 3, time_signature["numerator"])
     return out
 
-
+@njit(cache=True, boundscheck=False)
 def is_compound_meter(time_signature: np.ndarray) -> np.ndarray:
     """Check if the time signature is a compound meter.
     a signature is a compound meter if all applies:

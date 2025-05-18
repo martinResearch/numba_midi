@@ -1250,6 +1250,38 @@ class Score:
         )
         return beat_ticks[beats_floor] + (beats - beats_floor) * ticks_per_beat
 
+    def ticks_to_quarter_notes(self, ticks: np.ndarray) -> np.ndarray:
+        """Convert ticks to quarter notes."""
+        assert len(ticks) > 0, "Ticks must be a non-empty array"
+        # Compute the quarter note positions in seconds using the tempo
+        quarter_note_ticks = self.ticks_per_quarter
+        # Compute the positions in quarter notes
+        return ticks / quarter_note_ticks
+
+    def quarter_notes_to_ticks(self, quarter_notes: np.ndarray) -> np.ndarray:
+        """Convert quarter notes to ticks."""
+        assert len(quarter_notes) > 0, "Quarter notes must be a non-empty array"
+        # Compute the quarter note positions in seconds using the tempo
+        quarter_note_ticks = self.ticks_per_quarter
+        # Compute the positions in ticks
+        return quarter_notes * quarter_note_ticks
+
+    def quarter_notes_to_times(self, quarter_notes: np.ndarray) -> np.ndarray:
+        """Convert quarter notes to time."""
+        assert len(quarter_notes) > 0, "Quarter notes must be a non-empty array"
+        # Compute the positions in time
+        return self.ticks_to_quarter_notes(self.quarter_notes_to_ticks(quarter_notes))
+
+    def times_to_quarter_notes(self, times: np.ndarray) -> np.ndarray:
+        """Convert times to quarter notes."""
+        assert times.ndim == 1, "Input must be a 1D array"
+        return self.ticks_to_quarter_notes(self.times_to_ticks(times))
+
+    def time_to_quarter_note(self, time: float) -> float:
+        """Convert time to quarter note."""
+        assert time >= 0, "Time must be non-negative"
+        return float(self.times_to_quarter_notes(np.array([time]))[0])
+
     def beats_to_times(self, beats: np.ndarray) -> np.ndarray:
         """Convert beats to time."""
         return self.ticks_to_times(self.beats_to_ticks(beats))
@@ -1262,25 +1294,23 @@ class Score:
         """Convert a beat to tick."""
         return int(self.beats_to_ticks(np.array([beat]))[0])
 
-    def quantize_times(self, times: np.ndarray, step: float) -> np.ndarray:
-        """Quantize the score to the given time step in beat units."""
-        assert step > 0, "Step must be positive"
-        beats = self.times_to_beats(times)
+    def quantize_times(self, times: np.ndarray, subdivision: int) -> np.ndarray:
+        """Quantize the score to the given time subdivision factor."""
+        assert subdivision > 0, "Subdivision must be positive"
+        quarter_notes = self.times_to_quarter_notes(times)
         # Quantize the beats to the nearest step
-        quantized_beats = np.round(beats / step) * step
+        quantized_quarter_notes = np.round(quarter_notes * 4 / subdivision) * (subdivision / 4)
         # Convert the quantized beats back to time
-        quantized_times = self.beats_to_times(quantized_beats)
+        quantized_times = self.quarter_notes_to_times(quantized_quarter_notes)
         return quantized_times
 
-    def quantize_time(self, time: float, step: float) -> float:
-        """Quantize the score to the given time step in beat units."""
-        assert step > 0, "Step must be positive"
-        beats = self.times_to_beats(np.array([time]))
-        # Quantize the beats to the nearest step
-        quantized_beats = np.round(beats / step) * step
-        # Convert the quantized beats back to time
-        quantized_times = self.beats_to_times(quantized_beats)
-        return quantized_times[0]
+    def quantize_time(self, time: float, subdivision: int) -> float:
+        """Quantize the score to the notes subdivision factor.        
+        subdivision==4 means quarter notes
+        subdivision==8 means eighth notes
+        subdivision==16 means sixteenth notes
+        """      
+        return float(self.quantize_times(np.array([time]), subdivision)[0])
 
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:

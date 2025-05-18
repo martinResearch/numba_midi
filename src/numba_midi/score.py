@@ -21,6 +21,7 @@ from numba_midi.instruments import (
     program_to_instrument_group,
 )
 from numba_midi.midi import EventArray, get_event_times, load_midi_bytes, Midi, MidiTrack, save_midi_file
+from numba_midi.utils import get_tick_per_beat_array
 
 if TYPE_CHECKING:
     from numba_midi.pianoroll import PianoRoll
@@ -1225,7 +1226,11 @@ class Score:
         # Compute the  positions in beats
         beat_idx = np.searchsorted(beat_ticks, ticks, side="right") - 1
         signature_idx = np.searchsorted(self.time_signature.time, time, side="right") - 1
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[signature_idx]
+        ticks_per_beat = get_tick_per_beat_array(
+            self.ticks_per_quarter,
+            self.time_signature.numerator[signature_idx],
+            self.time_signature.denominator[signature_idx],
+        )
         beats = beat_idx + (ticks - beat_ticks[beat_idx]) / ticks_per_beat
         return beats
 
@@ -1238,7 +1243,11 @@ class Score:
         beat_ticks, _ = self.get_beat_and_bar_ticks()
         beats_floor = np.floor(beats).astype(np.int32)
         signature_idx = np.searchsorted(self.time_signature.time, beats, side="right") - 1
-        ticks_per_beat = self.ticks_per_quarter * 4 // self.time_signature.denominator[signature_idx]
+        ticks_per_beat = get_tick_per_beat_array(
+            self.ticks_per_quarter,
+            self.time_signature.numerator[signature_idx],
+            self.time_signature.denominator[signature_idx],
+        )
         return beat_ticks[beats_floor] + (beats - beats_floor) * ticks_per_beat
 
     def beats_to_times(self, beats: np.ndarray) -> np.ndarray:

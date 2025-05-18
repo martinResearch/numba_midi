@@ -25,7 +25,7 @@ def test_get_beat_positions() -> None:
         print(f"Testing get_beat_positions with {midi_file}")
         # load row midi score
         score = load_score(midi_file)
-        subdivisions,  beats, bars = score.get_subdivision_beat_and_bar_times()
+        subdivisions, beats, bars = score.get_subdivision_beat_and_bar_times()
         assert len(subdivisions) > 0
         assert np.all(np.diff(subdivisions) > 0)
         assert len(beats) > 0

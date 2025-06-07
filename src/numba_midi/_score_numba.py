@@ -87,9 +87,9 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
     last_program = 0
     for i in range(len(events) - 1, -1, -1):
         if program[i] == -1:
-            program[i] = last_program
+            program[i] = channel_to_program[events[i]["channel"]]
         else:
-            last_program = program[i]
+            channel_to_program[events[i]["channel"]] = program[i]
     return program
 
 
@@ -207,6 +207,7 @@ def get_beats_per_bar(time_signature: np.ndarray) -> np.ndarray:
     compound_meter = is_compound_meter(time_signature)
     out = np.where(compound_meter, time_signature["numerator"] // 3, time_signature["numerator"])
     return out
+
 
 @njit(cache=True, boundscheck=False)
 def is_compound_meter(time_signature: np.ndarray) -> np.ndarray:

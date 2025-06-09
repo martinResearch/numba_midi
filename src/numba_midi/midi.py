@@ -141,7 +141,7 @@ class EventArray:
     def __getitem__(self, index: np.ndarray) -> "EventArray":
         pass
 
-    def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray" | Event:
+    def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray | Event":
         """Get item(s) from the EventArray."""
         if isinstance(index, int):
             if index < 0 or index >= len(self._data):

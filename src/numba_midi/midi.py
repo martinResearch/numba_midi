@@ -1,7 +1,8 @@
 """Functions to parse MIDI files and extract events using Numba for performance."""
 
 from dataclasses import dataclass
-from typing import Iterable
+from enum import IntEnum
+from typing import Iterable, Iterator, overload
 
 from numba.core.decorators import njit
 from numba.typed import List
@@ -20,18 +21,34 @@ event_dtype = np.dtype(
     ]
 )
 
-# event types:
-# 0: Note On
-# 1: Note Off
-# 2: Pitch Bend
-# 3: Control Change
-# 4: Program Change
-# 5: Tempo Change
-# 6: Channel Aftertouch
-# 7: Polyphonic Aftertouch
-# 8: SysEx
-# 9: End of track
-# 10@: Time Signature Change
+
+@dataclass
+class Event:
+    """MIDI event representation."""
+
+    tick: int
+    event_type: int
+    channel: int
+    value1: int
+    value2: int
+    value3: int
+    value4: int
+
+
+class EventType(IntEnum):
+    """Enum for MIDI event types."""
+
+    note_on = 0
+    note_off = 1
+    pitch_bend = 2
+    control_change = 3
+    program_change = 4
+    tempo_change = 5
+    channel_aftertouch = 6
+    polyphonic_aftertouch = 7
+    sysex = 8
+    end_of_track = 9
+    time_signature_change = 10
 
 
 class EventArray:
@@ -112,7 +129,32 @@ class EventArray:
     def value4(self, value: np.ndarray | int) -> None:
         self._data["value4"][:] = value
 
-    def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray":
+    @overload
+    def __getitem__(self, index: int) -> Event:
+        pass
+
+    @overload
+    def __getitem__(self, index: slice) -> "EventArray":
+        pass
+
+    @overload
+    def __getitem__(self, index: np.ndarray) -> "EventArray":
+        pass
+
+    def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray" | Event:
+        """Get item(s) from the EventArray."""
+        if isinstance(index, int):
+            if index < 0 or index >= len(self._data):
+                raise IndexError("Index out of bounds")
+            return Event(
+                tick=self._data["tick"][index],
+                event_type=self._data["event_type"][index],
+                channel=self._data["channel"][index],
+                value1=self._data["value1"][index],
+                value2=self._data["value2"][index],
+                value3=self._data["value3"][index],
+                value4=self._data["value4"][index],
+            )
         result = self._data[index]
         return EventArray(result)  # Return new wrapper for slices or boolean arrays
 
@@ -128,6 +170,22 @@ class EventArray:
     @property
     def size(self) -> int:
         return self._data.size
+
+    def __repr__(self) -> str:
+        return f"EventArray(size={self.size})"
+
+    def __iter__(self) -> Iterator[Event]:
+        """Iterate over the events."""
+        for event in self._data:
+            yield Event(
+                tick=event["tick"],
+                event_type=event["event_type"],
+                channel=event["channel"],
+                value1=event["value1"],
+                value2=event["value2"],
+                value3=event["value3"],
+                value4=event["value4"],
+            )
 
 
 @dataclass

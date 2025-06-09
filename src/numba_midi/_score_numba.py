@@ -81,10 +81,11 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
         program[i] = channel_to_program[events[i]["channel"]]
 
     # walk backward to replace -1 by the nearest following valid program
+    # in the channel
     # this is to deal with events before the first program change
     # FIXME maybe we should take into account the notes and attribute use the channel
     # associate to the next note?
-    last_program = 0
+
     for i in range(len(events) - 1, -1, -1):
         if program[i] == -1:
             program[i] = channel_to_program[events[i]["channel"]]

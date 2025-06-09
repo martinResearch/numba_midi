@@ -205,7 +205,7 @@ def _piano_roll_to_score_jit(
         note_pitch = pitch_min + row
         note_on = False
         sum_velocity = 0
-        col_start=0
+        col_start = 0
         for col in range(piano_roll.shape[1]):
             if piano_roll[row, col] > threshold:
                 if not note_on:

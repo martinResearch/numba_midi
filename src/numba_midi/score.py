@@ -1321,6 +1321,10 @@ class Score:
         """
         return float(self.quantize_times(np.array([time]), subdivision)[0])
 
+    def to_midi(self) -> Midi:
+        """Convert the Score to a Midi."""
+        return score_to_midi(self)
+
 
 def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dict[Any, np.ndarray]:
     """Group data by keys."""
@@ -1615,7 +1619,7 @@ def has_duplicate_values(values: list) -> bool:
 
 
 def score_to_midi(score: Score) -> Midi:
-    """Convert a Score to a Midi file and save it."""
+    """Convert a Score to a Midi."""
     midi_tracks = []
 
     use_multiple_tracks = len(set(track.midi_track_id for track in score.tracks)) > 1
@@ -2178,7 +2182,7 @@ def crop_score(score: Score, start: float, end: float) -> Score:
         # for each control number keep the last value before the start time
         previous_controls = track.controls[track.controls.time < start]
         last_control = np.full((127,), -1, dtype=np.int32)
-        last_control[previous_controls.number] = np.arange(len(previous_controls))
+        last_control[previous_controls.number] = previous_controls.value
         controls_keep[last_control[last_control >= 0]] = True
         new_controls = track.controls[controls_keep]
         new_controls.time = np.maximum(new_controls.time - start, 0)

@@ -1142,13 +1142,16 @@ class Score:
         assert len(time) == len(duration) == len(pitch) == len(velocity), (
             "time, pitch and valocity must have the same length"
         )
+        end = time + duration
+        start_tick = self.times_to_ticks(time)
+        time = self.ticks_to_times(start_tick)
+        end_ticks = self.times_to_ticks(end)
+        end = self.ticks_to_times(end_ticks)
+        duration_ticks = end_ticks - start_tick
         notes = NoteArray.zeros(len(time))
         notes.start = time
-        notes.duration = duration
-        end = time + duration
-        notes.start_tick = self.times_to_ticks(time)
-        end_ticks = self.times_to_ticks(end)
-        duration_ticks = end_ticks - notes.start_tick
+        notes.duration = duration        
+        notes.start_tick = start_tick
         notes.duration_tick = duration_ticks
         notes.pitch = pitch
         notes.velocity = velocity
@@ -1158,10 +1161,11 @@ class Score:
     def add_controls(self, track_id: int, time: np.ndarray, number: np.ndarray, value: np.ndarray) -> None:
         """Add controls to the score."""
         assert len(time) == len(number) == len(value), "time, number and value must have the same length"
-
+        ticks = self.times_to_ticks(time)
+        time = self.ticks_to_times(ticks)
         controls = ControlArray.zeros(len(time))
         controls.time = time
-        controls.tick = self.times_to_ticks(time)
+        controls.tick = ticks
         controls.number = number
         controls.value = value
         track = self.tracks[track_id]
@@ -1175,9 +1179,11 @@ class Score:
     def add_pitch_bends(self, track_id: int, time: np.ndarray, value: np.ndarray) -> None:
         """Add pitch bends to the score."""
         assert len(time) == len(value), "time and value must have the same length"
+        ticks = self.times_to_ticks(time)
+        time = self.ticks_to_times(ticks)
         pitch_bends = PitchBendArray.zeros(len(time))
         pitch_bends.time = time
-        pitch_bends.tick = self.times_to_ticks(time)
+        pitch_bends.tick = ticks
         pitch_bends.value = value
         track = self.tracks[track_id]
 
@@ -1189,9 +1195,11 @@ class Score:
     def add_tempos(self, time: np.ndarray, quarter_notes_per_minute: np.ndarray) -> None:
         """Add tempos to the score."""
         assert len(time) == len(quarter_notes_per_minute), "time and quarter_notes_per_minute must have the same length"
+        ticks = self.times_to_ticks(time)
+        time = self.ticks_to_times(ticks)
         tempos = TempoArray.zeros(len(time))
         tempos.time = time
-        tempos.tick = self.times_to_ticks(time)
+        tempos.tick = ticks
         tempos.quarter_notes_per_minute = quarter_notes_per_minute
         tempos = TempoArray.concatenate((self.tempo, tempos))
         self.tempo = tempos

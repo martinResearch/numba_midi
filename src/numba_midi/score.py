@@ -1150,7 +1150,7 @@ class Score:
         duration_ticks = end_ticks - start_tick
         notes = NoteArray.zeros(len(time))
         notes.start = time
-        notes.duration = duration        
+        notes.duration = duration
         notes.start_tick = start_tick
         notes.duration_tick = duration_ticks
         notes.pitch = pitch

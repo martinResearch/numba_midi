@@ -1045,6 +1045,10 @@ class Score:
     def time_to_tick(self, time: float) -> int:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
 
+    def time_to_float_tick(self, time: float) -> float:
+        """Convert time to float ticks."""
+        return time_to_float_tick(time, self.tempo, self.ticks_per_quarter)
+
     def times_to_ticks(self, times: np.ndarray) -> np.ndarray:
         return times_to_ticks(times, self.tempo, self.ticks_per_quarter)
 

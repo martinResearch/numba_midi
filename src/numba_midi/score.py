@@ -1042,7 +1042,7 @@ class Score:
             str(file_path), notes_mode=notes_mode, minimize_tempo=minimize_tempo, check_round_trip=check_round_trip
         )
 
-    def time_to_tick(self, time: float) -> float:
+    def time_to_tick(self, time: float) -> int:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
 
     def times_to_ticks(self, times: np.ndarray) -> np.ndarray:
@@ -1060,7 +1060,6 @@ class Score:
         pitch: np.ndarray,
         duration: np.ndarray,
         velocity: np.ndarray,
-        round_tick: bool = True,
     ) -> NoteArray:
         """Create notes from start, pitch and duration."""
         assert len(start) == len(pitch) == len(duration), "start, pitch and duration must have the same length"
@@ -1070,10 +1069,10 @@ class Score:
         end = start + duration
         end_ticks = self.times_to_ticks(end)
         duration_ticks = end_ticks - self.times_to_ticks(start)
-        if round_tick:
-            start = self.ticks_to_times(self.times_to_ticks(start))
-            end = self.ticks_to_times(end_ticks)
-            duration = end - start
+
+        start = self.ticks_to_times(self.times_to_ticks(start))
+        end = self.ticks_to_times(end_ticks)
+        duration = end - start
 
         notes.start = start
         notes.start_tick = self.times_to_ticks(start)
@@ -1083,22 +1082,22 @@ class Score:
         notes.velocity = velocity
         return notes
 
-    def create_note(
-        self, start: float, pitch: int, duration: float, velocity: int, round_tick: bool = True
-    ) -> NoteArray:
+    def round_tick(self, time: float) -> tuple[float, int]:
+        """Round the time to the nearest tick."""
+        rounded_time, tick = round_tick(time, self.tempo, self.ticks_per_quarter)
+
+        return rounded_time, tick
+
+    def create_note(self, start: float, pitch: int, duration: float, velocity: int) -> NoteArray:
         """Create a note from start, pitch and duration."""
         notes = NoteArray.zeros(1)
-        start_tick = self.time_to_tick(start)
+        start, start_tick = self.round_tick(start)
         end = start + duration
-        end_ticks = self.time_to_tick(end)
+        end, end_ticks = self.round_tick(end)
         duration_ticks = end_ticks - start_tick
-        if round_tick:
-            start = self.tick_to_time(start_tick)
-            end = self.tick_to_time(end_ticks)
-            duration = end - start
-
+        duration = end - start
         notes.start[:] = start
-        notes.start_tick[:] = self.time_to_tick(start)
+        notes.start_tick[:] = start_tick
         notes.duration[:] = duration
         notes.duration_tick[:] = duration_ticks
         notes.pitch[:] = pitch
@@ -2058,7 +2057,7 @@ def check_no_overlapping_notes_in_score(score: Score) -> None:
         check_no_overlapping_notes(track.notes)
 
 
-def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> float:
+def time_to_float_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> float:
     """Convert a time in seconds to tick."""
     # get the tempo at the start of the time range
     tempo_idx: int = 0
@@ -2072,6 +2071,29 @@ def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> floa
     quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     return ref_ticks + (time - ref_time) * ticks_per_second
+
+
+def round_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> tuple[float, int]:
+    """Convert a time in seconds to tick and round it to the nearest tick."""
+    tempo_idx: int = 0
+    if tempo.size > 1:
+        tempo_idx = int(np.searchsorted(tempo.time, time, side="right") - 1)
+
+    tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
+    quarter_notes_per_minute = tempo.quarter_notes_per_minute[tempo_idx]
+    ref_ticks = tempo.tick[tempo_idx]
+    ref_time = tempo.time[tempo_idx]
+    quarter_per_second = quarter_notes_per_minute / 60.0
+    ticks_per_second = ticks_per_quarter * quarter_per_second
+    tick_float = ref_ticks + (time - ref_time) * ticks_per_second
+    tick = int(tick_float)
+    time_rounded = ref_time + (tick - ref_ticks) / ticks_per_second
+    return time_rounded, tick
+
+
+def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> int:
+    """Convert a time in seconds to tick."""
+    return int(time_to_float_tick(time, tempo, ticks_per_quarter))
 
 
 def tick_to_time(tick: float, tempo: TempoArray, ticks_per_quarter: int) -> float:
@@ -2100,7 +2122,7 @@ def ticks_to_times(tick: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) 
     return ref_time + (tick - ref_ticks) / ticks_per_second
 
 
-def times_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> np.ndarray:
+def times_to_float_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> np.ndarray:
     """Convert a time in seconds to ticks."""
     # get the tempo at the start of the time range
     if tempo.size > 1:
@@ -2113,7 +2135,12 @@ def times_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) 
     ref_time = tempo.time[tempo_idx]
     quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
-    return (ref_ticks + (time - ref_time) * ticks_per_second).astype(np.int32)
+    return ref_ticks + (time - ref_time) * ticks_per_second
+
+
+def times_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> np.ndarray:
+    """Convert a time in seconds to ticks."""
+    return np.floor(times_to_float_ticks(time, tempo, ticks_per_quarter)).astype(np.int32)
 
 
 def update_ticks(score: Score, tempo: TempoArray) -> Score:
@@ -2154,8 +2181,8 @@ def crop_score(score: Score, start: float, end: float) -> Score:
         tempo_keep[previous_tempos[-1]] = True
     new_tempo = score.tempo[tempo_keep]
     new_tempo.time = np.maximum(new_tempo.time - start, 0)
-    tick_end = time_to_tick(end, score.tempo, score.ticks_per_quarter)
-    tick_start = time_to_tick(start, score.tempo, score.ticks_per_quarter)
+    tick_end = int(np.floor(time_to_float_tick(end, score.tempo, score.ticks_per_quarter)))
+    tick_start = int(np.ceil(time_to_float_tick(start, score.tempo, score.ticks_per_quarter)))
     new_tempo.tick = np.maximum(new_tempo.tick - tick_start, 0)
 
     for track in score.tracks:

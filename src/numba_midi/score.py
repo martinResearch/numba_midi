@@ -978,7 +978,7 @@ class Score:
     def last_tick(self) -> int:
         """Get the last tick of the score."""
         # last_tick = max(track.last_tick() for track in self.tracks)
-        last_tick = int(self.time_to_tick(self.duration))
+        last_tick = int(np.round(self.time_to_tick(self.duration)))
         return last_tick
 
     def __post_init__(self) -> None:
@@ -1045,10 +1045,6 @@ class Score:
     def time_to_tick(self, time: float) -> int:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
 
-    def time_to_float_tick(self, time: float) -> float:
-        """Convert time to float ticks."""
-        return time_to_float_tick(time, self.tempo, self.ticks_per_quarter)
-
     def times_to_ticks(self, times: np.ndarray) -> np.ndarray:
         return times_to_ticks(times, self.tempo, self.ticks_per_quarter)
 
@@ -1057,6 +1053,11 @@ class Score:
 
     def ticks_to_times(self, ticks: np.ndarray) -> np.ndarray:
         return ticks_to_times(ticks, self.tempo, self.ticks_per_quarter)
+
+    def round_to_ticks(self, times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Round the given times to the nearest tick."""
+        rounded_times, ticks = round_to_ticks(times, self.tempo, self.ticks_per_quarter)
+        return rounded_times, ticks
 
     def create_notes(
         self,
@@ -1069,35 +1070,31 @@ class Score:
         assert len(start) == len(pitch) == len(duration), "start, pitch and duration must have the same length"
 
         notes = NoteArray.zeros(len(start))
-
+        start, start_ticks = self.round_to_ticks(start)
         end = start + duration
-        end_ticks = self.times_to_ticks(end)
-        duration_ticks = end_ticks - self.times_to_ticks(start)
-
-        start = self.ticks_to_times(self.times_to_ticks(start))
-        end = self.ticks_to_times(end_ticks)
+        end, end_ticks = self.round_to_ticks(end)
+        duration_ticks = end_ticks - start_ticks
         duration = end - start
-
         notes.start = start
-        notes.start_tick = self.times_to_ticks(start)
+        notes.start_tick = start_ticks
         notes.duration = duration
         notes.duration_tick = duration_ticks
         notes.pitch = pitch
         notes.velocity = velocity
         return notes
 
-    def round_tick(self, time: float) -> tuple[float, int]:
+    def round_to_tick(self, time: float) -> tuple[float, int]:
         """Round the time to the nearest tick."""
-        rounded_time, tick = round_tick(time, self.tempo, self.ticks_per_quarter)
+        rounded_time, tick = round_to_tick(time, self.tempo, self.ticks_per_quarter)
 
         return rounded_time, tick
 
     def create_note(self, start: float, pitch: int, duration: float, velocity: int) -> NoteArray:
         """Create a note from start, pitch and duration."""
         notes = NoteArray.zeros(1)
-        start, start_tick = self.round_tick(start)
+        start, start_tick = self.round_to_tick(start)
         end = start + duration
-        end, end_ticks = self.round_tick(end)
+        end, end_ticks = self.round_to_tick(end)
         duration_ticks = end_ticks - start_tick
         duration = end - start
         notes.start[:] = start
@@ -1146,13 +1143,11 @@ class Score:
             "time, pitch and valocity must have the same length"
         )
         end = time + duration
-        start_tick = self.times_to_ticks(time)
-        time = self.ticks_to_times(start_tick)
-        end_ticks = self.times_to_ticks(end)
-        end = self.ticks_to_times(end_ticks)
+        start_tick, start = self.round_to_ticks(time)
+        end, end_ticks = self.round_to_ticks(end)
         duration_ticks = end_ticks - start_tick
         notes = NoteArray.zeros(len(time))
-        notes.start = time
+        notes.start = start
         notes.duration = duration
         notes.start_tick = start_tick
         notes.duration_tick = duration_ticks
@@ -1164,8 +1159,7 @@ class Score:
     def add_controls(self, track_id: int, time: np.ndarray, number: np.ndarray, value: np.ndarray) -> None:
         """Add controls to the score."""
         assert len(time) == len(number) == len(value), "time, number and value must have the same length"
-        ticks = self.times_to_ticks(time)
-        time = self.ticks_to_times(ticks)
+        ticks, time = self.round_to_ticks(time)
         controls = ControlArray.zeros(len(time))
         controls.time = time
         controls.tick = ticks
@@ -1182,8 +1176,7 @@ class Score:
     def add_pitch_bends(self, track_id: int, time: np.ndarray, value: np.ndarray) -> None:
         """Add pitch bends to the score."""
         assert len(time) == len(value), "time and value must have the same length"
-        ticks = self.times_to_ticks(time)
-        time = self.ticks_to_times(ticks)
+        ticks, time = self.round_to_ticks(time)
         pitch_bends = PitchBendArray.zeros(len(time))
         pitch_bends.time = time
         pitch_bends.tick = ticks
@@ -1198,8 +1191,7 @@ class Score:
     def add_tempos(self, time: np.ndarray, quarter_notes_per_minute: np.ndarray) -> None:
         """Add tempos to the score."""
         assert len(time) == len(quarter_notes_per_minute), "time and quarter_notes_per_minute must have the same length"
-        ticks = self.times_to_ticks(time)
-        time = self.ticks_to_times(ticks)
+        ticks, time = self.round_to_ticks(time)
         tempos = TempoArray.zeros(len(time))
         tempos.time = time
         tempos.tick = ticks
@@ -1509,9 +1501,9 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         # this allows to have a order for the events that simplifies the code to process them
         events_groups = group_data([events_programs, events.channel])
         # sort in lexicographic order by pitch first and then by tick, then even type
-        # this allows to have a order for the events that simplifies the
-        # extracting matching note starts and stops
-        # we sort by inverse of event type in order to deal with the case there is no gap
+        # this allows to have an  order for the events that simplifies the logic to
+        # extract matching note starts and stop events.
+        # We sort by inverse of event type in order to deal with the case there is no gap
         # between two consecutive notes
         # extract the event of type note on or note off
         notes_events_ids = np.nonzero((events.event_type == 0) | (events.event_type == 1))[0]
@@ -2077,7 +2069,7 @@ def time_to_float_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -
     return ref_ticks + (time - ref_time) * ticks_per_second
 
 
-def round_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> tuple[float, int]:
+def round_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> tuple[float, int]:
     """Convert a time in seconds to tick and round it to the nearest tick."""
     tempo_idx: int = 0
     if tempo.size > 1:
@@ -2090,7 +2082,26 @@ def round_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> tuple[
     quarter_per_second = quarter_notes_per_minute / 60.0
     ticks_per_second = ticks_per_quarter * quarter_per_second
     tick_float = ref_ticks + (time - ref_time) * ticks_per_second
-    tick = int(tick_float)
+    tick = int(np.round(tick_float))
+    time_rounded = ref_time + (tick - ref_ticks) / ticks_per_second
+    return time_rounded, tick
+
+
+def round_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> tuple[np.ndarray, np.ndarray]:
+    """Convert a time in seconds to tick and round it to the nearest tick."""
+    # get the tempo at the start of the time range
+    if tempo.size > 1:
+        tempo_idx = np.searchsorted(tempo.time, time, side="right") - 1
+    else:
+        tempo_idx = np.zeros(len(time), dtype=np.int32)
+    tempo_idx = np.clip(tempo_idx, 0, tempo.size - 1)
+    quarter_notes_per_minute = tempo.quarter_notes_per_minute[tempo_idx]
+    ref_ticks = tempo.tick[tempo_idx]
+    ref_time = tempo.time[tempo_idx]
+    quarter_per_second = quarter_notes_per_minute / 60.0
+    ticks_per_second = ticks_per_quarter * quarter_per_second
+    tick_float = ref_ticks + (time - ref_time) * ticks_per_second
+    tick = np.round(tick_float).astype(np.int32)
     time_rounded = ref_time + (tick - ref_ticks) / ticks_per_second
     return time_rounded, tick
 
@@ -2144,7 +2155,7 @@ def times_to_float_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter:
 
 def times_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) -> np.ndarray:
     """Convert a time in seconds to ticks."""
-    return np.floor(times_to_float_ticks(time, tempo, ticks_per_quarter)).astype(np.int32)
+    return np.round(times_to_float_ticks(time, tempo, ticks_per_quarter)).astype(np.int32)
 
 
 def update_ticks(score: Score, tempo: TempoArray) -> Score:

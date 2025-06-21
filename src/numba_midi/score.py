@@ -1045,6 +1045,10 @@ class Score:
     def time_to_tick(self, time: float) -> int:
         return time_to_tick(time, self.tempo, self.ticks_per_quarter)
 
+    def time_to_float_tick(self, time: float) -> float:
+        """Convert time to float tick."""
+        return time_to_float_tick(time, self.tempo, self.ticks_per_quarter)
+
     def times_to_ticks(self, times: np.ndarray) -> np.ndarray:
         return times_to_ticks(times, self.tempo, self.ticks_per_quarter)
 
@@ -1053,6 +1057,11 @@ class Score:
 
     def ticks_to_times(self, ticks: np.ndarray) -> np.ndarray:
         return ticks_to_times(ticks, self.tempo, self.ticks_per_quarter)
+
+    def round_to_tick(self, time: float) -> tuple[float, int]:
+        """Round the time to the nearest tick."""
+        rounded_time, tick = round_to_tick(time, self.tempo, self.ticks_per_quarter)
+        return rounded_time, tick
 
     def round_to_ticks(self, times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Round the given times to the nearest tick."""
@@ -1082,12 +1091,6 @@ class Score:
         notes.pitch = pitch
         notes.velocity = velocity
         return notes
-
-    def round_to_tick(self, time: float) -> tuple[float, int]:
-        """Round the time to the nearest tick."""
-        rounded_time, tick = round_to_tick(time, self.tempo, self.ticks_per_quarter)
-
-        return rounded_time, tick
 
     def create_note(self, start: float, pitch: int, duration: float, velocity: int) -> NoteArray:
         """Create a note from start, pitch and duration."""
@@ -2108,7 +2111,7 @@ def round_to_ticks(time: np.ndarray, tempo: TempoArray, ticks_per_quarter: int) 
 
 def time_to_tick(time: float, tempo: TempoArray, ticks_per_quarter: int) -> int:
     """Convert a time in seconds to tick."""
-    return int(time_to_float_tick(time, tempo, ticks_per_quarter))
+    return int(np.round(time_to_float_tick(time, tempo, ticks_per_quarter)))
 
 
 def tick_to_time(tick: float, tempo: TempoArray, ticks_per_quarter: int) -> float:

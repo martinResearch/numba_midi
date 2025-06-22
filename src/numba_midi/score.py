@@ -955,7 +955,7 @@ class Score:
     """MIDI score representation."""
 
     tracks: list[Track]
-    duration: float
+    last_tick: int
     tempo: TempoArray  # 1D structured numpy array with tempo_dtype elements
     time_signature: SignatureArray  # 1D structured numpy array with signature_dtype elements
     lyrics: list[tuple[int, str]] | None = None
@@ -975,11 +975,14 @@ class Score:
     def __repr__(self) -> str:
         return f"Score(num_tracks={self.num_tracks}, num_notes={self.num_notes}, duration={self.duration:02g})"
 
-    def last_tick(self) -> int:
-        """Get the last tick of the score."""
-        # last_tick = max(track.last_tick() for track in self.tracks)
-        last_tick = int(np.round(self.time_to_tick(self.duration)))
-        return last_tick
+    @property
+    def duration(self) -> float:
+        return self.tick_to_time(self.last_tick)
+
+    @duration.setter
+    def duration(self, value: float) -> None:
+        """Set the duration of the score."""
+        self.last_tick = int(np.round(self.time_to_tick(value)))
 
     def __post_init__(self) -> None:
         assert isinstance(self.tempo, TempoArray), "Tempo must be a structured numpy array with tempo_dtype elements"
@@ -988,7 +991,7 @@ class Score:
         )
         assert self.tracks is not None, "Tracks must be a list of Track objects"
         # assert len(self.tracks) > 0, "Tracks must be a non-empty list of Track objects"
-        assert self.duration > 0, "Duration must be a positive float"
+        assert self.last_tick > 0, "Duration must be a positive float"
         assert len(self.tempo) > 0, "Tempo must a non-empty"
 
     def to_pianoroll(
@@ -1013,9 +1016,7 @@ class Score:
         )
 
     def get_subdivision_beat_and_bar_ticks(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return get_subdivision_beat_and_bar_ticks_jit(
-            self.ticks_per_quarter, self.last_tick(), self.time_signature._data
-        )
+        return get_subdivision_beat_and_bar_ticks_jit(self.ticks_per_quarter, self.last_tick, self.time_signature._data)
 
     def get_subdivision_beat_and_bar_times(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get the beat and bar times in seconds."""
@@ -1198,12 +1199,14 @@ class Score:
             time,
             ticks,
         ) = self.round_to_ticks(time)
+
         tempos = TempoArray.zeros(len(time))
         tempos.time = time
         tempos.tick = ticks
         tempos.quarter_notes_per_minute = quarter_notes_per_minute
         tempos = TempoArray.concatenate((self.tempo, tempos))
         self.tempo = tempos
+
         self._resort_tempo()
         self._recompute_times()
 
@@ -1400,7 +1403,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     Convert from event-based representation notes with durations
     """
     tracks = []
-    duration = 0.0
+    duration_tick = 0
     # assert len(midi_score.tracks) == 1, "Only one track is supported for now"
     ticks_per_quarter = midi_score.ticks_per_quarter
     all_tempo_events = []
@@ -1488,7 +1491,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         events_ticks = events.tick
         events_times = get_event_times(events._data, tempo_events._data, midi_score.ticks_per_quarter)
 
-        duration = max(duration, events_times.max())
+        duration_tick = max(duration_tick, events.tick.max())
 
         # if only tempo events, skip the track
         if np.all(midi_track.events.event_type == 5):
@@ -1615,7 +1618,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
     return Score(
         tracks=tracks,
         lyrics=lyrics,
-        duration=duration,
+        last_tick=duration_tick,
         time_signature=signature,
         ticks_per_quarter=ticks_per_quarter,
         tempo=tempo,
@@ -1753,7 +1756,7 @@ def score_to_midi(score: Score) -> Midi:
         events.channel[id_start] = 0
         events.value1[id_start] = 0
         events.value2[id_start] = 0
-        events.tick[id_start] = score.last_tick()
+        events.tick[id_start] = score.last_tick
         id_start += 1
 
         if use_multiple_tracks:
@@ -1874,7 +1877,7 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
 
     new_score = Score(
         tracks=new_tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -1937,7 +1940,7 @@ def filter_instruments(score: Score, instrument_names: list[str]) -> Score:
             tracks.append(track)
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -1953,7 +1956,7 @@ def remove_empty_tracks(score: Score) -> Score:
             tracks.append(track)
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -1971,7 +1974,7 @@ def remove_pitch_bends(score: Score) -> Score:
 
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -1989,7 +1992,7 @@ def remove_pedals(score: Score) -> Score:
 
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -2007,7 +2010,7 @@ def remove_control_changes(score: Score) -> Score:
 
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -2024,7 +2027,7 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
         tracks.append(new_track)
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,
@@ -2178,10 +2181,11 @@ def update_ticks(score: Score, tempo: TempoArray) -> Score:
         new_track.controls.tick = times_to_ticks(new_track.controls.time, tempo, score.ticks_per_quarter)
         new_track.pitch_bends.tick = times_to_ticks(new_track.pitch_bends.time, tempo, score.ticks_per_quarter)
         tracks.append(new_track)
+    last_tick = int(np.ceil(time_to_float_tick(score.last_tick, tempo, score.ticks_per_quarter)))
 
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=tempo,
@@ -2195,7 +2199,7 @@ def crop_score(score: Score, start: float, end: float) -> Score:
     and thus the sound may not be the same as the cropped original sound.
     """
     tracks = []
-    duration = end - start
+
     previous_tempos = np.nonzero(score.tempo.time < start)[0]
     tempo_keep = (score.tempo.time < end) & (score.tempo.time >= start)
     if len(previous_tempos) > 0:
@@ -2266,7 +2270,7 @@ def crop_score(score: Score, start: float, end: float) -> Score:
         tracks.append(new_track)
     return Score(
         tracks=tracks,
-        duration=duration,
+        last_tick=tick_end - tick_start,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=new_tempo,
@@ -2278,7 +2282,7 @@ def select_tracks(score: Score, track_ids: list[int]) -> Score:
     tracks = [score.tracks[track_id] for track_id in track_ids]
     return Score(
         tracks=tracks,
-        duration=score.duration,
+        last_tick=score.last_tick,
         time_signature=score.time_signature,
         ticks_per_quarter=score.ticks_per_quarter,
         tempo=score.tempo,

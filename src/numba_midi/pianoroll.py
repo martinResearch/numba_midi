@@ -17,6 +17,7 @@ from numba_midi.score import (
     Score,
     SignatureArray,
     TempoArray,
+    time_to_float_tick,
     times_to_ticks,
     Track,
 )
@@ -308,9 +309,10 @@ def piano_roll_to_score(
             midi_track_id=midi_track_id,
         )
         tracks.append(track)
+    last_tick = int(ceil(time_to_float_tick(piano_roll.duration, tempo, piano_roll.ticks_per_quarter)))
     return Score(
         tracks=tracks,
-        duration=piano_roll.duration,
+        last_tick=last_tick,
         time_signature=piano_roll.time_signature,
         tempo=tempo,
         ticks_per_quarter=piano_roll.ticks_per_quarter,

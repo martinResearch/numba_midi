@@ -79,9 +79,11 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
         clocks_per_click=[clocks_per_click],
         notated_32nd_notes_per_beat=[notated_32nd_notes_per_beat],
     )
+    end_time = midi.get_end_time()
+    last_tick = midi.time_to_tick(end_time)
     score = Score(
         tracks=tracks,
-        duration=midi.get_end_time(),
+        last_tick=last_tick,
         time_signature=time_signatures,
         tempo=tempo,
         ticks_per_quarter=ticks_per_quarter,
@@ -101,7 +103,7 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
         tick_scale = 60.0 / (tempo.quarter_notes_per_minute * midi.resolution)
         midi._tick_scales.append((int(tempo.tick), tick_scale))
     # Create list that maps ticks to time in seconds
-    midi._update_tick_to_time(score.last_tick())
+    midi._update_tick_to_time(score.last_tick)
 
     for track in score.tracks:
         instrument = pretty_midi.Instrument(

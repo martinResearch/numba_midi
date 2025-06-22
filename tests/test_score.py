@@ -56,7 +56,7 @@ def test_signature() -> None:
             time=[0.0],
             quarter_notes_per_minute=[quarter_notes_per_minute],
         )
-        score = Score(ticks_per_quarter=480, time_signature=time_signature, tempo=tempo, duration=10, tracks=[])
+        score = Score(ticks_per_quarter=480, time_signature=time_signature, tempo=tempo, last_tick=480 * 10, tracks=[])
         notes = score.create_notes(
             start=np.array([0]),
             duration=np.array([1]),

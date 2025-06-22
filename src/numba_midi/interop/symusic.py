@@ -100,7 +100,7 @@ def from_symusic(symusic_score: symusic.types.Score) -> Score:
     )
     score = Score(
         tracks=tracks,
-        duration=score_seconds.end(),
+        last_tick=score_ticks.end(),
         tempo=tempo,
         time_signature=time_signature,
         ticks_per_quarter=symusic_score.ticks_per_quarter,

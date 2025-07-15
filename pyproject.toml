@@ -10,7 +10,7 @@ where = ["src"]
 
 [project]
 name = "numba_midi"
-version = "0.1.26"
+version = "0.1.27"
 description = "numba-accelerated python midi score processing library."
 authors = [{ name = "Martin de La Gorce" }]
 dependencies = ["numba>=0.61","numpy"]
@@ -33,7 +33,8 @@ dev = [
     "setuptools",
     "requests",
     "types-requests",
-    "pandas"
+    "pandas", 
+    "Pillow"
 ]
 
 

@@ -109,7 +109,7 @@ Our library has also been benchmarked against alternatives on the [symusic page]
 
 * add conversion function from and to pypianoroll structure
 * add conversion function from and to muspy structure
-* add pianoroll plotting functions into numpy arrays and matplotlib plots.
+* add support for drawing in matplotlib plots.
 
 ## Alternatives
 

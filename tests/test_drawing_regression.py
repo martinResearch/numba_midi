@@ -172,7 +172,7 @@ def test_piano_roll_drawing2(update_lkg: bool = False) -> None:
     )
 
     # Define the piano roll box (time and pitch range)
-    _,_,bar_time = score.get_subdivision_beat_and_bar_times()
+    _, _, bar_time = score.get_subdivision_beat_and_bar_times()
     box = PianorollBox(time_left=bar_time[1], time_right=bar_time[9], pitch_bottom=40.5, pitch_top=85.5)
 
     np.random.seed(42)  # For reproducibility

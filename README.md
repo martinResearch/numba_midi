@@ -4,6 +4,8 @@
 
 A Numba-accelerated Python library for fast MIDI file reading and music score processing.
 
+![pianoroll_mozart_lacrimosa](./tests/data/midi_draw/piano_roll_lkg2.png)
+
 This library is implemented entirely in Python, making it portable and easy to modify and extend for Python developers. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note Python class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations. The set of dependencies is minimal and limited to `numpy` and `numba`.
 
 ## Main features
@@ -17,7 +19,7 @@ This library is implemented entirely in Python, making it portable and easy to m
 * Conversion to and from piano roll representation.
 * Conversion functions from/to `pretty_midi` and `symusic`.
 * Timestamps and durations both in seconds and ticks.
-* Utility functions to draw colored pianorolls and control curves in numpy arrays.
+* Utility functions to draw colored pianorolls and control curves into numpy arrays.
 
 ## Installation
 
@@ -104,12 +106,6 @@ When reading from disk, we are about 7x faster than *pretty_midi* and 22x slower
 Our library has also been benchmarked against alternatives on the [symusic page](https://github.com/Yikai-Liao/symusic). In this benchmark *numba-midi* load midi files 15x faster than *pretty_midi* and 20x slower than *symusic* when comparing the median speed. 
 
 **Note:** We could probably get a 2x speedup with a reasonable amount of effort by moving more code to Numba JIT-compiled functions.
-
-# TODO
-
-* add conversion function from and to pypianoroll structure
-* add conversion function from and to muspy structure
-* add support for drawing in matplotlib plots.
 
 ## Alternatives
 

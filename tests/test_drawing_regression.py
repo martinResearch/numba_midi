@@ -23,6 +23,7 @@ from numba_midi.midi_draw import (
 from numba_midi.numba_draw import NumPyCanvas
 from numba_midi.score import (
     Controls,
+    load_score,
     Notes,
     Pedals,
     PitchBends,
@@ -151,6 +152,78 @@ def test_piano_roll_drawing(update_lkg: bool = False) -> None:
         assert max_diff < 1.0, f"Image differs from LKG by {max_diff} pixel values"
 
 
+def test_piano_roll_drawing2(update_lkg: bool = False) -> None:
+    """Test that drawing a piano roll produces the expected image."""
+    # Create a simple score with a few notes
+
+    midi_file = Path(__file__).parent / "data" / "numba_midi" / "e09376d72937d4574f3f9f23a2e5e71c.mid"
+
+    score = load_score(midi_file)
+    num_tracks = len(score.tracks)
+
+    # Create MidiDraw instance with default color theme and NumPy backend
+    canvas = NumPyCanvas(200, 800)
+    color_theme = ColorTheme(
+        piano_roll_background_color_odd=hex_to_rgb("#EEEEEE"),
+        piano_roll_background_color_even=hex_to_rgb("#ffffff"),
+        subdivision_lines_color=hex_to_rgb("#c7c7c7"),
+        beat_lines_color=hex_to_rgb("#B6B5B5"),
+        bar_lines_color=hex_to_rgb("#7a7a7a"),
+    )
+
+    # Define the piano roll box (time and pitch range)
+    box = PianorollBox(time_left=2, time_right=60, pitch_bottom=40, pitch_top=85)
+
+    np.random.seed(42)  # For reproducibility
+    track_colors = TrackColors(
+        fill_colors=np.random.rand(num_tracks, 3) * 128 + 127,  # Random colors for each track
+        edge_colors=np.full((num_tracks, 3), 150),  # Random colors for each track
+        thickness=np.full(num_tracks, 1),  # Uniform thickness for all tracks
+        alpha=np.full(num_tracks, 0.9),  # Uniform alpha for all tracks
+    )
+    grid_options = GridOptions(
+        draw_beats=True,
+        draw_pitches=True,
+        draw_subdivisions=True,
+    )
+
+    draw_pianoroll(
+        score=score,
+        canvas=canvas,
+        grid_options=grid_options,
+        track_colors=track_colors,
+        box=box,
+        color_theme=color_theme,
+    )
+    result_image = canvas._image
+    result_image = (result_image).astype(np.uint8)
+    # Path to the LKG image
+    lkg_path = LKG_DIR / "piano_roll_lkg2.png"
+
+    if update_lkg:
+        # Save the current result as the new LKG
+        # Convert from float32 to uint8 if needed
+        # Save as PNG using numpy-based image libraries
+        Image.fromarray(result_image).save(lkg_path)
+        print(f"Updated LKG image at {lkg_path}")
+    else:
+        # Compare with the existing LKG
+        if not lkg_path.exists():
+            pytest.fail(f"LKG image does not exist at {lkg_path}. Run with update_lkg=True to create it.")
+
+        expected_image = np.array(Image.open(lkg_path))
+
+        # Check image dimensions
+        assert result_image.shape == expected_image.shape, (
+            f"Image shape mismatch: got {result_image.shape}, expected {expected_image.shape}"
+        )
+
+        # Compare pixel values
+        # Allow for small differences due to potential platform-specific rendering differences
+        max_diff = np.max(np.abs(result_image.astype(np.float32) - expected_image.astype(np.float32)))
+        assert max_diff < 1.0, f"Image differs from LKG by {max_diff} pixel values"
+
+
 def test_control_curve_drawing(update_lkg: bool = False) -> None:
     """Test that drawing a control curve produces the expected image."""
     # Create a simple score with control points
@@ -207,4 +280,5 @@ def test_control_curve_drawing(update_lkg: bool = False) -> None:
 if __name__ == "__main__":
     # When run directly, create/update the LKG images
     test_piano_roll_drawing(update_lkg=False)
+    test_piano_roll_drawing2(update_lkg=True)
     test_control_curve_drawing(update_lkg=False)

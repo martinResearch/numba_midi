@@ -51,7 +51,7 @@ class EventType(IntEnum):
     time_signature_change = 10
 
 
-class EventArray:
+class Events:
     """Wrapper for a structured numpy array with event_dtype elements."""
 
     def __init__(self, data: np.ndarray) -> None:
@@ -60,16 +60,16 @@ class EventArray:
         self._data = data
 
     @classmethod
-    def zeros(cls, size: int) -> "EventArray":
-        """Create a new EventArray with zeros."""
+    def zeros(cls, size: int) -> "Events":
+        """Create a new Events with zeros."""
         data = np.zeros(size, dtype=event_dtype)
         return cls(data)
 
     @classmethod
-    def concatenate(cls, arrays: Iterable["EventArray"]) -> "EventArray":
-        """Concatenate multiple EventArrays."""
+    def concatenate(cls, arrays: Iterable["Events"]) -> "Events":
+        """Concatenate multiple Eventss."""
         if not arrays:
-            raise ValueError("No EventArrays to concatenate")
+            raise ValueError("No Eventss to concatenate")
         data = np.concatenate([arr._data for arr in arrays])
         return cls(data)
 
@@ -134,15 +134,15 @@ class EventArray:
         pass
 
     @overload
-    def __getitem__(self, index: slice) -> "EventArray":
+    def __getitem__(self, index: slice) -> "Events":
         pass
 
     @overload
-    def __getitem__(self, index: np.ndarray) -> "EventArray":
+    def __getitem__(self, index: np.ndarray) -> "Events":
         pass
 
-    def __getitem__(self, index: int | slice | np.ndarray) -> "EventArray | Event":
-        """Get item(s) from the EventArray."""
+    def __getitem__(self, index: int | slice | np.ndarray) -> "Events | Event":
+        """Get item(s) from the Events."""
         if isinstance(index, int):
             if index < 0 or index >= len(self._data):
                 raise IndexError("Index out of bounds")
@@ -156,9 +156,9 @@ class EventArray:
                 value4=self._data["value4"][index],
             )
         result = self._data[index]
-        return EventArray(result)  # Return new wrapper for slices or boolean arrays
+        return Events(result)  # Return new wrapper for slices or boolean arrays
 
-    def __setitem__(self, index: int | slice | np.ndarray, value: "EventArray") -> None:
+    def __setitem__(self, index: int | slice | np.ndarray, value: "Events") -> None:
         self._data[index] = value._data
 
     def __len__(self) -> int:
@@ -172,7 +172,7 @@ class EventArray:
         return self._data.size
 
     def __repr__(self) -> str:
-        return f"EventArray(size={self.size})"
+        return f"Events(size={self.size})"
 
     def __iter__(self) -> Iterator[Event]:
         """Iterate over the events."""
@@ -193,11 +193,11 @@ class MidiTrack:
     """MIDI track representation."""
 
     name: str
-    events: EventArray  # 1D structured numpy array with event_dtype elements
+    events: Events  # 1D structured numpy array with event_dtype elements
     lyrics: list[tuple[int, str]] | None  # List of tuples (tick, lyric)
 
     def __post_init__(self) -> None:
-        assert isinstance(self.events, EventArray), "Events must be a EventArray"
+        assert isinstance(self.events, Events), "Events must be a Events"
         assert isinstance(self.name, str), "Track name must be a string"
 
 
@@ -527,7 +527,7 @@ def load_midi_bytes(data: bytes) -> Midi:
         tracks_names.append(text_decode(track_name))
         lyrics = [(tick, text_decode(lyric)) for tick, lyric in lyrics] if lyrics else None
         tracks_lyrics.append(lyrics)
-        tracks_events.append(EventArray(midi_events_np))
+        tracks_events.append(Events(midi_events_np))
 
     # modify the tracks to have the same time signature
     for name, lyrics, events in zip(tracks_names, tracks_lyrics, tracks_events, strict=False):
@@ -545,7 +545,7 @@ def load_midi_bytes(data: bytes) -> Midi:
     )
 
 
-def sort_midi_events(midi_events: EventArray) -> EventArray:
+def sort_midi_events(midi_events: Events) -> Events:
     """Sorts MIDI events."""
     order = np.lexsort((midi_events.channel, midi_events.event_type, midi_events.tick))
     sorted_events = midi_events[order]

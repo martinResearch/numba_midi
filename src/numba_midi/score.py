@@ -20,7 +20,7 @@ from numba_midi.instruments import (
     program_to_instrument,
     program_to_instrument_group,
 )
-from numba_midi.midi import EventArray, get_event_times, load_midi_bytes, Midi, MidiTrack, save_midi_file
+from numba_midi.midi import Events, get_event_times, load_midi_bytes, Midi, MidiTrack, save_midi_file
 from numba_midi.utils import get_tick_per_beat_array
 
 if TYPE_CHECKING:
@@ -1363,7 +1363,7 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
     return output
 
 
-def extract_notes_start_stop(note_events: EventArray, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
+def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
     notes_order = np.lexsort((note_events.event_type, note_events.tick, note_events.value1, note_events.channel))
     sorted_note_events = note_events[notes_order]
     ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(
@@ -1417,14 +1417,14 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             keep = np.hstack((np.diff(tempo_change.tick) > 0, [True]))
             all_tempo_events.append(tempo_change[keep])
     if len(all_tempo_events) > 0:
-        tempo_events = EventArray.concatenate(all_tempo_events)
+        tempo_events = Events.concatenate(all_tempo_events)
         # sort by tick
         tempo_events = tempo_events[np.argsort(tempo_events.tick)]
         # keep only the last tempo change for each tick
         tempo_events = tempo_events[np.hstack((np.diff(tempo_events.tick) > 0, [True]))]
     else:
         # if no tempo events are found, we create a default one
-        tempo_events = EventArray.zeros(1)
+        tempo_events = Events.zeros(1)
         tempo_events.event_type[:] = 5
         tempo_events.channel[:] = 0
         tempo_events.value1[:] = 120 * 1000000.0 / 60.0
@@ -1449,13 +1449,13 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             all_signature_events.append(signature_events)
 
     if len(all_signature_events) > 0:
-        signature_events = EventArray.concatenate(all_signature_events)
+        signature_events = Events.concatenate(all_signature_events)
         # sort by tick
         signature_events = signature_events[np.argsort(signature_events.tick)]
         # keep only the last signature change for each tick
         signature_events = signature_events[np.hstack((np.diff(signature_events.tick) > 0, [True]))]
     else:
-        signature_events = EventArray.zeros(1)
+        signature_events = Events.zeros(1)
         signature_events.value1[:] = 4
         signature_events.value2[:] = 2
 
@@ -1650,7 +1650,7 @@ def score_to_midi(score: Score) -> Midi:
             num_events += len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 1
         num_events += len(score.tempo)
         num_events += len(score.tracks)  # end of tracks event.
-        events = EventArray.zeros(num_events)
+        events = Events.zeros(num_events)
 
         id_start = 0
 
@@ -1665,7 +1665,7 @@ def score_to_midi(score: Score) -> Midi:
         lyrics = score.lyrics
     else:
         # create track with the tempo changes and time signature
-        tempo_events = EventArray.zeros(len(score.tempo))
+        tempo_events = Events.zeros(len(score.tempo))
         tempo_events.event_type[:] = 5
         tempo_events.channel[:] = 0
         tempo_events.value1[:] = 60000000 / score.tempo.quarter_notes_per_minute
@@ -1673,7 +1673,7 @@ def score_to_midi(score: Score) -> Midi:
         tempo_events.tick[:] = score.tempo.tick
 
         # add the time signature event
-        signature_events = EventArray.zeros(len(score.time_signature))
+        signature_events = Events.zeros(len(score.time_signature))
         signature_events.event_type[:] = 10
         signature_events.channel[:] = 0
         signature_events.value1[:] = score.time_signature.numerator
@@ -1682,7 +1682,7 @@ def score_to_midi(score: Score) -> Midi:
         signature_events.value4[:] = score.time_signature.notated_32nd_notes_per_beat
         signature_events.tick[:] = score.time_signature.tick
 
-        events = EventArray.concatenate([tempo_events, signature_events])
+        events = Events.concatenate([tempo_events, signature_events])
         midi_tracks.append(
             MidiTrack(
                 name="tempo",
@@ -1695,7 +1695,7 @@ def score_to_midi(score: Score) -> Midi:
             midi_tracks.append(
                 MidiTrack(
                     name="lyrics",
-                    events=EventArray.zeros(0),
+                    events=Events.zeros(0),
                     lyrics=score.lyrics,
                 )
             )
@@ -1705,7 +1705,7 @@ def score_to_midi(score: Score) -> Midi:
     for track_id, track in enumerate(score.tracks):
         if use_multiple_tracks:
             num_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 2
-            events = EventArray.zeros(num_events)
+            events = Events.zeros(num_events)
             id_start = 0
 
         num_track_events = len(track.notes) * 2 + len(track.controls) + len(track.pitch_bends) + 2

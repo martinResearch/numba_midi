@@ -56,7 +56,7 @@ class EventArray:
 
     def __init__(self, data: np.ndarray) -> None:
         if data.dtype != event_dtype:
-            raise ValueError("Invalid dtype for ControlArray")
+            raise ValueError("Invalid dtype for Controls")
         self._data = data
 
     @classmethod

@@ -10,13 +10,13 @@ import numpy as np
 from numba_midi.score import (
     check_no_overlapping_notes,
     check_no_overlapping_notes_in_score,
-    ControlArray,
-    NoteArray,
-    PedalArray,
-    PitchBendArray,
+    Controls,
+    Notes,
+    Pedals,
+    PitchBends,
     Score,
-    SignatureArray,
-    TempoArray,
+    Signatures,
+    Tempos,
     time_to_float_tick,
     times_to_ticks,
     Track,
@@ -33,11 +33,11 @@ class PianoRoll:
     num_bin_per_semitone: int
     programs: list[int]
     track_names: list[str]
-    time_signature: SignatureArray
+    time_signature: Signatures
     ticks_per_quarter: int = 480
     midi_track_ids: Optional[list[int | None]] = None
     channels: Optional[list[int | None]] = None
-    tempo: Optional[TempoArray] = None
+    tempo: Optional[Tempos] = None
 
     @property
     def duration(self) -> float:
@@ -258,7 +258,7 @@ def piano_roll_to_score(
 
     if piano_roll.tempo is None:
         # default tempo is 120 BPM
-        tempo = TempoArray(time=[0], tick=[0], quarter_notes_per_minute=[120])
+        tempo = Tempos(time=[0], tick=[0], quarter_notes_per_minute=[120])
     else:
         tempo = piano_roll.tempo
     for track_id in range(piano_roll_semitone.shape[0]):
@@ -274,7 +274,7 @@ def piano_roll_to_score(
         midi_track_id = piano_roll.midi_track_ids[track_id] if piano_roll.midi_track_ids is not None else None
 
         # Create the structured array
-        notes = NoteArray.zeros(len(start))
+        notes = Notes.zeros(len(start))
 
         # Assign values to the fields
         notes.start = start
@@ -282,9 +282,9 @@ def piano_roll_to_score(
         notes.pitch = pitch
         notes.velocity = velocity
 
-        controls = ControlArray.zeros(0)
-        pedals = PedalArray.zeros(0)
-        pitch_bends = PitchBendArray.zeros(0)
+        controls = Controls.zeros(0)
+        pedals = Pedals.zeros(0)
+        pitch_bends = PitchBends.zeros(0)
 
         if piano_roll.ticks_per_quarter is None:
             ticks_per_quarter = 480

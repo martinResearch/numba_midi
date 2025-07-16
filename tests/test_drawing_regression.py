@@ -22,13 +22,13 @@ from numba_midi.midi_draw import (
 )
 from numba_midi.numba_draw import NumPyCanvas
 from numba_midi.score import (
-    ControlArray,
-    NoteArray,
-    PedalArray,
-    PitchBendArray,
+    Controls,
+    Notes,
+    Pedals,
+    PitchBends,
     Score,
-    SignatureArray,
-    TempoArray,
+    Signatures,
+    Tempos,
     Track,
 )
 
@@ -39,8 +39,8 @@ os.makedirs(LKG_DIR, exist_ok=True)
 
 def create_score_with_notes() -> Score:
     """Create a simple score with a few notes."""
-    tempo = TempoArray(time=[0], tick=[0], quarter_notes_per_minute=[120])
-    time_signature = SignatureArray(
+    tempo = Tempos(time=[0], tick=[0], quarter_notes_per_minute=[120])
+    time_signature = Signatures(
         time=[0], tick=[0], numerator=[4], denominator=[4], clocks_per_click=[24], notated_32nd_notes_per_beat=[8]
     )
     score = Score(tracks=[], tempo=tempo, last_tick=480 * 50, time_signature=time_signature)
@@ -48,10 +48,10 @@ def create_score_with_notes() -> Score:
         name="Track 1",
         program=0,
         is_drum=False,
-        notes=NoteArray.zeros((0)),
-        controls=ControlArray.zeros((0)),
-        pedals=PedalArray.zeros((0)),
-        pitch_bends=PitchBendArray.zeros((0)),
+        notes=Notes.zeros((0)),
+        controls=Controls.zeros((0)),
+        pedals=Pedals.zeros((0)),
+        pitch_bends=PitchBends.zeros((0)),
     )
     score.add_track(track)
     score.add_notes(

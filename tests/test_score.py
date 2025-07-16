@@ -6,13 +6,13 @@ from pathlib import Path
 import numpy as np
 
 from numba_midi.score import (
-    ControlArray,
+    Controls,
     load_score,
-    PedalArray,
-    PitchBendArray,
+    Pedals,
+    PitchBends,
     Score,
-    SignatureArray,
-    TempoArray,
+    Signatures,
+    Tempos,
     Track,
 )
 from numba_midi.utils import get_bar_duration, get_bpm_from_quarter_notes_per_minute
@@ -43,7 +43,7 @@ def test_signature() -> None:
         numerator, denominator = signature
 
         print(f"Testing signature with numerator={numerator}, denominator={denominator}")
-        time_signature = SignatureArray(
+        time_signature = Signatures(
             numerator=[numerator],
             denominator=[denominator],
             tick=[0],
@@ -51,7 +51,7 @@ def test_signature() -> None:
             clocks_per_click=[24],
             notated_32nd_notes_per_beat=[8],
         )
-        tempo = TempoArray(
+        tempo = Tempos(
             tick=[0],
             time=[0.0],
             quarter_notes_per_minute=[quarter_notes_per_minute],
@@ -69,9 +69,9 @@ def test_signature() -> None:
             is_drum=False,
             name="Track 1",
             notes=notes,
-            controls=ControlArray.zeros(0),
-            pitch_bends=PitchBendArray.zeros(0),
-            pedals=PedalArray.zeros(0),
+            controls=Controls.zeros(0),
+            pitch_bends=PitchBends.zeros(0),
+            pedals=Pedals.zeros(0),
         )
         score.add_track(track)
 

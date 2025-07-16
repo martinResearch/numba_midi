@@ -6,7 +6,7 @@ from typing import Protocol, Tuple
 import numpy as np
 
 from numba_midi.numba_draw import Rectangles
-from numba_midi.score import ControlArray, NoteArray, Score
+from numba_midi.score import Controls, Notes, Score
 
 
 @dataclass
@@ -331,7 +331,7 @@ def draw_controls(
     width = canvas.width
     controls = score.tracks[track_number].controls
     selected_controls = controls[controls.number == control_number]
-    assert isinstance(selected_controls, ControlArray)
+    assert isinstance(selected_controls, Controls)
 
     # sort the controls by time
     selected_controls = selected_controls[np.argsort(selected_controls.time)]
@@ -346,7 +346,7 @@ def draw_controls(
     draw_staircase(canvas, x=x, y=y, color=color)
 
 
-def notes_to_rectangles(notes: NoteArray, box: PianorollBox, height: int, width: int) -> np.ndarray:
+def notes_to_rectangles(notes: Notes, box: PianorollBox, height: int, width: int) -> np.ndarray:
     """Convert notes to rectangles for drawing."""
     # Convert notes to rectangles for drawing
     pixel_mapping = get_pixel_mapping(width, height, box)
@@ -381,7 +381,7 @@ def draw_score_notes(
 
 def draw_notes(
     canvas: CanvasProto,
-    notes: NoteArray,
+    notes: Notes,
     box: PianorollBox,
     fill_color: Tuple[int, int, int],
     edge_color: Tuple[int, int, int] | None = None,
@@ -433,7 +433,7 @@ def draw_velocities(
 
 def draw_notes_velocities(
     canvas: CanvasProto,
-    notes: NoteArray,
+    notes: Notes,
     time_left: float,
     time_right: float,
     fill_color: Tuple[int, int, int],

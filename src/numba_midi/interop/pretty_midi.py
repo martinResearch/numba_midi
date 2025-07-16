@@ -4,13 +4,13 @@ import numpy as np
 import pretty_midi
 
 from numba_midi.score import (
-    ControlArray,
+    Controls,
     get_pedals_from_controls,
-    NoteArray,
-    PitchBendArray,
+    Notes,
+    PitchBends,
     Score,
-    SignatureArray,
-    TempoArray,
+    Signatures,
+    Tempos,
     Track,
 )
 
@@ -19,7 +19,7 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     """Convert a PrettyMIDI object to a Score object."""
     tracks = []
     for _, instrument in enumerate(midi.instruments):
-        notes = NoteArray.zeros(len(instrument.notes))
+        notes = Notes.zeros(len(instrument.notes))
         for note_id, note in enumerate(instrument.notes):
             notes.start[note_id] = note.start
             start_tick = midi.time_to_tick(note.start)
@@ -30,13 +30,13 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
             notes.pitch[note_id] = note.pitch
             notes.velocity[note_id] = note.velocity
 
-        pitch_bends = PitchBendArray.zeros(len(instrument.pitch_bends))
+        pitch_bends = PitchBends.zeros(len(instrument.pitch_bends))
         for pitch_bend_id, pitch_bend in enumerate(instrument.pitch_bends):
             pitch_bends.time[pitch_bend_id] = pitch_bend.time
             pitch_bends.value[pitch_bend_id] = pitch_bend.pitch
             pitch_bends.tick[pitch_bend_id] = midi.time_to_tick(pitch_bend.time)
 
-        controls = ControlArray.zeros(len(instrument.control_changes))
+        controls = Controls.zeros(len(instrument.control_changes))
         for control_id, control in enumerate(instrument.control_changes):
             controls.time[control_id] = control.time
             controls.value[control_id] = control.value
@@ -61,7 +61,7 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
 
     ticks_per_quarter = midi.resolution
     tempo_change_times, tempi = midi.get_tempo_changes()
-    tempo = TempoArray.zeros(len(tempo_change_times))
+    tempo = Tempos.zeros(len(tempo_change_times))
 
     clocks_per_click = 24  # Looks like we don't have this information in pretty_midi
     notated_32nd_notes_per_beat = 8  # Looks like we don't have this information in pretty_midi
@@ -71,7 +71,7 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     # 60.0/(midi._tick_scales[0][1]*midi.resolution)
     tempo.tick = np.array([midi.time_to_tick(t) for t in tempo_change_times])
 
-    time_signatures = SignatureArray(
+    time_signatures = Signatures(
         numerator=[event.numerator for event in midi.time_signature_changes],
         denominator=[event.denominator for event in midi.time_signature_changes],
         tick=[midi.time_to_tick(event.time) for event in midi.time_signature_changes],

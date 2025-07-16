@@ -172,7 +172,8 @@ def test_piano_roll_drawing2(update_lkg: bool = False) -> None:
     )
 
     # Define the piano roll box (time and pitch range)
-    box = PianorollBox(time_left=2, time_right=60, pitch_bottom=40, pitch_top=85)
+    _,_,bar_time = score.get_subdivision_beat_and_bar_times()
+    box = PianorollBox(time_left=bar_time[1], time_right=bar_time[9], pitch_bottom=40.5, pitch_top=85.5)
 
     np.random.seed(42)  # For reproducibility
     track_colors = TrackColors(
@@ -280,5 +281,5 @@ def test_control_curve_drawing(update_lkg: bool = False) -> None:
 if __name__ == "__main__":
     # When run directly, create/update the LKG images
     test_piano_roll_drawing(update_lkg=False)
-    test_piano_roll_drawing2(update_lkg=True)
+    test_piano_roll_drawing2(update_lkg=False)
     test_control_curve_drawing(update_lkg=False)

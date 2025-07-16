@@ -138,7 +138,7 @@ def draw_piano_roll_background(
     # Fill the background using draw_rectangles for the even color
     height = canvas.height
     width = canvas.width
-    background_rectangle = np.array([[0, 0, height, width]], dtype=np.int32)
+    background_rectangle = np.array([[0, 0, width, height]], dtype=np.int32)
     background_color = color_theme.piano_roll_background_color_even
     canvas.draw_rectangles(
         Rectangles(

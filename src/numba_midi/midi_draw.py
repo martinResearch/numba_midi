@@ -1,10 +1,11 @@
 """Drawing Utility to draw pianroll, note velocities and control curves."""
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, Tuple, Union
+from typing import Protocol, Tuple
 
 import numpy as np
 
+from numba_midi.numba_draw import Rectangles
 from numba_midi.score import ControlArray, NoteArray, Score
 
 
@@ -91,28 +92,8 @@ class CanvasProto(Protocol):
     @property
     def width(self) -> int: ...
 
-    def draw_rectangles(
-        self,
-        rectangles: np.ndarray,
-        fill_colors: Union[np.ndarray, Tuple[int, int, int]],
-        alpha: Union[np.ndarray, float] = 1.0,
-        edge_colors: Optional[Union[np.ndarray, Tuple[int, int, int]]] = None,
-        thickness: Union[np.ndarray, int] = 0,
-        fill_alpha: Optional[Union[np.ndarray, float]] = None,
-        edge_alpha: Optional[Union[np.ndarray, float]] = None,
-    ) -> None:
-        """Draw rectangles on the surface.
-
-        Args:
-            surface: The surface to draw on.
-            rectangles: Array of rectangle coordinates [x1, y1, x2, y2].
-            fill_colors: Fill color(s) for the rectangles.
-            alpha: Alpha/opacity value(s) for the rectangles.
-            edge_colors: Edge color(s) for the rectangles.
-            thickness: Thickness of the rectangle edges.
-            fill_alpha: Alpha/opacity for the fill (overrides alpha).
-            edge_alpha: Alpha/opacity for the edges (overrides alpha).
-        """
+    def draw_rectangles(self, rectangles: Rectangles) -> None:
+        """Draw rectangles on the canvas."""
         ...
 
     def draw_polyline(
@@ -160,11 +141,13 @@ def draw_piano_roll_background(
     background_rectangle = np.array([[0, 0, height, width]], dtype=np.int32)
     background_color = color_theme.piano_roll_background_color_even
     canvas.draw_rectangles(
-        background_rectangle,
-        fill_colors=background_color,
-        alpha=1.0,
-        edge_colors=None,
-        thickness=0,
+        Rectangles(
+            corners=background_rectangle,
+            fill_colors=background_color,
+            fill_alpha=1.0,
+            edge_colors=None,
+            thickness=0,
+        )
     )
 
     pixel_mapping = get_pixel_mapping(width, height, box)
@@ -189,11 +172,14 @@ def draw_piano_roll_background(
         pitches_edge_colors = np.zeros((127, 3), dtype=np.uint8)
         pitches_thickness = np.zeros((127), dtype=np.int32)
         canvas.draw_rectangles(
-            pitches_rectangles,
-            fill_colors=pitches_fill_colors,
-            alpha=pitches_alpha,
-            edge_colors=pitches_edge_colors,
-            thickness=pitches_thickness,
+            Rectangles(
+                corners=pitches_rectangles,
+                fill_colors=pitches_fill_colors,
+                fill_alpha=pitches_alpha,
+                edge_colors=pitches_edge_colors,
+                edge_alpha=None,
+                thickness=pitches_thickness,
+            )
         )
 
     # draw vertical lines every beat
@@ -213,11 +199,13 @@ def draw_piano_roll_background(
         ).astype(np.int32)
 
         canvas.draw_rectangles(
-            subdivision_rectangles,
-            fill_colors=color_theme.subdivision_lines_color,
-            alpha=1.0,
-            edge_colors=None,
-            thickness=0,
+            Rectangles(
+                corners=subdivision_rectangles,
+                fill_colors=color_theme.subdivision_lines_color,
+                fill_alpha=1.0,
+                edge_colors=None,
+                thickness=0,
+            )
         )
     if grid_options.draw_beats:
         beat_rectangles = np.column_stack(
@@ -230,11 +218,13 @@ def draw_piano_roll_background(
         ).astype(np.int32)
 
         canvas.draw_rectangles(
-            beat_rectangles,
-            fill_colors=color_theme.beat_lines_color,
-            alpha=1.0,
-            edge_colors=None,
-            thickness=0,
+            Rectangles(
+                corners=beat_rectangles,
+                fill_colors=color_theme.beat_lines_color,
+                fill_alpha=1.0,
+                edge_colors=None,
+                thickness=0,
+            )
         )
 
     # draw vertical lines every bar
@@ -248,11 +238,13 @@ def draw_piano_roll_background(
     ).astype(np.int32)
 
     canvas.draw_rectangles(
-        bar_rectangles,
-        fill_colors=color_theme.bar_lines_color,
-        alpha=1.0,
-        edge_colors=None,
-        thickness=0,
+        Rectangles(
+            corners=bar_rectangles,
+            fill_colors=color_theme.bar_lines_color,
+            fill_alpha=1.0,
+            edge_colors=None,
+            thickness=0,
+        )
     )
 
 
@@ -280,7 +272,9 @@ def draw_piano_keys(canvas: CanvasProto, pitch_top: float, pitch_bottom: float) 
 
     # Fill with white background
     bg_rect = np.array([[0, 0, width, height]], dtype=np.int32)
-    canvas.draw_rectangles(bg_rect, fill_colors=(255, 255, 255), alpha=1.0, edge_colors=None, thickness=0)
+    canvas.draw_rectangles(
+        Rectangles(corners=bg_rect, fill_colors=(255, 255, 255), fill_alpha=1.0, edge_colors=None, thickness=0)
+    )
 
     # draw the piano black and white keys
     # draw white keys
@@ -299,7 +293,13 @@ def draw_piano_keys(canvas: CanvasProto, pitch_top: float, pitch_bottom: float) 
     ).astype(np.int32)
 
     canvas.draw_rectangles(
-        white_keys_rectangles, fill_colors=(255, 255, 255), alpha=1.0, edge_colors=(0, 0, 0), thickness=1
+        Rectangles(
+            corners=white_keys_rectangles,
+            fill_colors=(255, 255, 255),
+            fill_alpha=1.0,
+            edge_colors=(0, 0, 0),
+            thickness=1,
+        )
     )
     # draw black keys
     black_keys_pitches = pitches[~is_white_key]
@@ -311,7 +311,9 @@ def draw_piano_keys(canvas: CanvasProto, pitch_top: float, pitch_bottom: float) 
             1 + (pitch_top - black_keys_pitches + 0.5) * pixels_per_pitch,
         )
     ).astype(np.int32)
-    canvas.draw_rectangles(black_keys_rectangles, fill_colors=(0, 0, 0), alpha=1.0, edge_colors=None, thickness=0)
+    canvas.draw_rectangles(
+        Rectangles(corners=black_keys_rectangles, fill_colors=(0, 0, 0), fill_alpha=1.0, edge_colors=None, thickness=0)
+    )
 
 
 def draw_controls(
@@ -392,11 +394,13 @@ def draw_notes(
 
     rectangles = notes_to_rectangles(notes=notes, box=box, height=canvas.height, width=canvas.width)
     canvas.draw_rectangles(
-        rectangles,
-        fill_colors=fill_color,
-        alpha=alpha,  # Apply transparency to non-selected tracks
-        edge_colors=edge_color,
-        thickness=thickness,
+        Rectangles(
+            corners=rectangles,
+            fill_colors=fill_color,
+            fill_alpha=alpha,  # Apply transparency to non-selected tracks
+            edge_colors=edge_color,
+            thickness=thickness,
+        )
     )
 
 
@@ -458,11 +462,13 @@ def draw_notes_velocities(
     ).astype(np.int32)
 
     canvas.draw_rectangles(
-        rectangles,
-        fill_colors=fill_color,
-        alpha=alpha,
-        edge_colors=edge_color,
-        thickness=thickness,
+        Rectangles(
+            corners=rectangles,
+            fill_colors=fill_color,
+            fill_alpha=alpha,
+            edge_colors=edge_color,
+            thickness=thickness,
+        )
     )
 
 

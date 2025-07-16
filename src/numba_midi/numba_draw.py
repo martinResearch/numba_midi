@@ -1,7 +1,46 @@
 """Draw rectangles and polylines on an image using Numba for performance."""
 
+from typing import Tuple
+
 from numba.core.decorators import njit
 import numpy as np
+
+
+class NumPyCanvas:
+    """Drawing backend that uses NumPy arrays and numba-accelerated functions."""
+
+    def __init__(self, height: int, width: int) -> None:
+        """Initialize the NumPy drawing backend."""
+        self.height = height
+        self.width = width
+        self._image = np.zeros((height, width, 3), dtype=np.uint8)
+
+    def draw_rectangles(self, rectangles: "Rectangles") -> None:
+        """Draw rectangles on the NumPy surface using numba-accelerated function."""
+        rectangles.draw(self._image)
+
+    def draw_polyline(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        color: Tuple[int, int, int],
+        thickness: int = 1,
+        alpha: float = 1.0,
+    ) -> None:
+        """Draw a polyline on the NumPy surface using numba-accelerated function."""
+        # Current implementation doesn't support thickness and alpha
+        draw_polyline(
+            image=self._image,
+            x=x,
+            y=y,
+            color=color,
+        )
+
+    def clear(self, color: Tuple[int, int, int]) -> None:
+        """Clear the canvas with a specific color."""
+        self._image[:, :, 0] = color[0]
+        self._image[:, :, 1] = color[1]
+        self._image[:, :, 2] = color[2]
 
 
 @njit(cache=True, fastmath=True, nogil=True, boundscheck=False)
@@ -80,126 +119,109 @@ def draw_rectangles_jit(
                 image[y1b:y2b, x2b:x2] = rect_edge_alpha * edge_color + (1 - rect_edge_alpha) * image[y1b:y2b, x2b:x2]
 
 
-def draw_rectangles(
-    image: np.ndarray,
-    rectangles: np.ndarray,
-    fill_colors: np.ndarray | tuple[int, int, int],
-    alpha: np.ndarray | float = 1.0,
-    edge_colors: np.ndarray | tuple[int, int, int] | None = None,
-    thickness: np.ndarray | int = 0,
-    fill_alpha: np.ndarray | float | None = None,
-    edge_alpha: np.ndarray | float | None = None,
-    prefilter: bool = True,
-) -> np.ndarray:
-    """Draw rectangles on an image with separate fill and edge alpha values.
+class Rectangles:
+    """A class to represent a collection of rectangles with colors and alpha values."""
 
-    Args:
-        image: The image to draw on, shape (height, width, 3)
-        rectangles: The rectangles to draw, shape (n, 4) where each row is (x1, y1, x2, y2)
-        fill_colors: The fill colors, shape (n, 3) or a single (r, g, b) tuple
-        alpha: The alpha value for both fill and edge (legacy parameter, use fill_alpha/edge_alpha)
-        edge_colors: The edge colors, shape (n, 3) or a single (r, g, b) tuple
-        thickness: The edge thickness, shape (n,) or a single int
-        fill_alpha: The fill alpha value, shape (n,) or a single float, overrides alpha
-        edge_alpha: The edge alpha value, shape (n,) or a single float, overrides alpha
-        prefilter: If True, filter out rectangles that are completely outside the image bounds
-    Returns:
-        The image with rectangles drawn
-    """
-    num_rectangles = rectangles.shape[0]
+    def __init__(
+        self,
+        corners: np.ndarray,
+        fill_colors: np.ndarray | tuple[int, int, int],
+        fill_alpha: np.ndarray | float = 1.0,
+        edge_colors: np.ndarray | tuple[int, int, int] | None = None,
+        thickness: np.ndarray | int = 0,
+        edge_alpha: np.ndarray | float | None = None,
+    ) -> None:
+        num_rectangles = corners.shape[0]
 
-    if prefilter:
-        # filter out rectangles that are completely outside the image bounds
-        keep_mask = (
-            (rectangles[:, 0] < image.shape[1])
-            & (rectangles[:, 2] > 0)
-            & (rectangles[:, 1] < image.shape[0])
-            & (rectangles[:, 3] > 0)
+        if edge_alpha is None:
+            edge_alpha = fill_alpha
+
+        assert corners.ndim == 2 and corners.shape[1] == 4, "corners must be a 2D array with 4 columns (x1, y1, x2, y2)"
+        self.corners = corners
+
+        # Convert single values to arrays
+        if isinstance(fill_alpha, float):
+            self.fill_alpha = np.full(num_rectangles, fill_alpha, dtype=np.float32)
+        else:
+            assert fill_alpha.shape[0] == num_rectangles, "fill_alpha must have the same number of rows as rectangles"
+            self.fill_alpha = fill_alpha
+
+        if isinstance(edge_alpha, float):
+            self.edge_alpha = np.full(num_rectangles, edge_alpha, dtype=np.float32)
+        else:
+            assert edge_alpha.shape[0] == num_rectangles, "edge_alpha must have the same number of rows as rectangles"
+            self.edge_alpha = edge_alpha
+
+        if isinstance(thickness, int):
+            self.thickness = np.full(num_rectangles, thickness, dtype=np.int32)
+        else:
+            assert thickness.shape[0] == num_rectangles, "thickness must have the same number of rows as rectangles"
+            self.thickness = thickness
+
+        # Convert single color values to arrays
+        if isinstance(fill_colors, tuple):
+            self.fill_colors = np.tile(np.array(fill_colors, dtype=np.uint8), (num_rectangles, 1))
+        else:
+            assert fill_colors.ndim == 2 and fill_colors.shape[1] == 3, (
+                "fill_colors must be a 2D array with 3 columns (R, G, B)"
+            )
+            self.fill_colors = fill_colors
+        assert self.fill_colors.shape[0] == num_rectangles, (
+            "fill_colors must have the same number of rows as rectangles"
         )
-        rectangles = rectangles[keep_mask]
-        if isinstance(fill_colors, np.ndarray):
-            fill_colors = fill_colors[keep_mask]
-        if isinstance(edge_colors, np.ndarray):
-            edge_colors = edge_colors[keep_mask]
-        if isinstance(fill_alpha, np.ndarray):
-            fill_alpha = fill_alpha[keep_mask]
-        if isinstance(edge_alpha, np.ndarray):
-            edge_alpha = edge_alpha[keep_mask]
-        if isinstance(thickness, np.ndarray):
-            thickness = thickness[keep_mask]
-        if isinstance(alpha, np.ndarray):
-            alpha = alpha[keep_mask]
-        if isinstance(fill_alpha, np.ndarray):
-            fill_alpha = fill_alpha[keep_mask]
-        if isinstance(edge_alpha, np.ndarray):
-            edge_alpha = edge_alpha[keep_mask]
-        num_rectangles = rectangles.shape[0]
-    if num_rectangles == 0:
-        # If no rectangles to draw, return the original image
+        # Handle edge colors
+        if edge_colors is None:
+            self.edge_colors = np.zeros_like(self.fill_colors, dtype=np.uint8)
+        elif isinstance(edge_colors, tuple):
+            self.edge_colors = np.tile(np.array(edge_colors, dtype=np.uint8), (num_rectangles, 1))
+        else:
+            assert edge_colors.ndim == 2 and edge_colors.shape[1] == 3, (
+                "edge_colors must be a 2D array with 3 columns (R, G, B)"
+            )
+            self.edge_colors = edge_colors
+
+    def filter_box(
+        self,
+        height: int,
+        width: int,
+    ) -> "Rectangles":
+        """Filter rectangles that are completely outside the image bounds."""
+        keep_mask = (
+            (self.corners[:, 0] < width)
+            & (self.corners[:, 2] > 0)
+            & (self.corners[:, 1] < height)
+            & (self.corners[:, 3] > 0)
+        )
+        return Rectangles(
+            corners=self.corners[keep_mask],
+            fill_colors=self.fill_colors[keep_mask],
+            fill_alpha=self.fill_alpha[keep_mask],
+            edge_colors=self.edge_colors[keep_mask],
+            thickness=self.thickness[keep_mask],
+            edge_alpha=self.edge_alpha[keep_mask],
+        )
+
+    def draw(
+        self,
+        image: np.ndarray,
+        prefilter: bool = True,
+    ) -> np.ndarray:
+        """Draw rectangles on an image with separate fill and edge alpha values."""
+        if prefilter:
+            rectangles = self.filter_box(image.shape[0], image.shape[1])
+            rectangles.draw(image, prefilter=False)
+            return image
+
+        draw_rectangles_jit(
+            image=image,
+            rectangles=self.corners,
+            fill_colors=self.fill_colors,
+            fill_alpha=self.fill_alpha,
+            edge_colors=self.edge_colors,
+            edge_alpha=self.edge_alpha,
+            thickness=self.thickness,
+        )
         return image
-    # Handle the legacy alpha parameter for backward compatibility
-    if fill_alpha is None:
-        fill_alpha = alpha
-    if edge_alpha is None:
-        edge_alpha = alpha
-
-    # Convert single values to arrays
-    if isinstance(fill_alpha, float):
-        fill_alpha = np.full(num_rectangles, fill_alpha, dtype=np.float32)
-    if isinstance(edge_alpha, float):
-        edge_alpha = np.full(num_rectangles, edge_alpha, dtype=np.float32)
-    if isinstance(thickness, int):
-        thickness = np.full(num_rectangles, thickness, dtype=np.int32)
-
-    # Convert single color values to arrays
-    if isinstance(fill_colors, tuple):
-        fill_colors = np.array(fill_colors, dtype=np.uint8)
-    if fill_colors.ndim == 1:
-        fill_colors = np.tile(fill_colors, (num_rectangles, 1))
-
-    # Handle edge colors
-    if edge_colors is None:
-        edge_colors = np.zeros_like(fill_colors, dtype=np.uint8)
-    if isinstance(edge_colors, tuple):
-        edge_colors = np.array(edge_colors, dtype=np.uint8)
-    if edge_colors.ndim == 1:
-        edge_colors = np.tile(edge_colors, (num_rectangles, 1))
-
-    if fill_colors.shape[0] != num_rectangles:
-        raise ValueError("fill_colors must have the same number of rows as rectangles")
-    if fill_alpha.shape[0] != num_rectangles:
-        raise ValueError("fill_alpha must have the same number of rows as rectangles")
-    if thickness.shape[0] != num_rectangles:
-        raise ValueError("thickness must have the same number of rows as rectangles")
-    if edge_colors.shape[0] != num_rectangles:
-        raise ValueError("edge_colors must have the same number of rows as rectangles")
-    if edge_alpha.shape[0] != num_rectangles:
-        raise ValueError("edge_alpha must have the same number of rows as rectangles")
-    if image.ndim != 3:
-        raise ValueError("image must be a 3D array")
-    if image.shape[2] != 3:
-        raise ValueError("image must have 3 channels (RGB)")
-    if rectangles.ndim != 2:
-        raise ValueError("rectangles must be a 2D array")
-    if rectangles.shape[1] != 4:
-        raise ValueError("rectangles must have 4 columns (x1, y1, x2, y2)")
-    if fill_colors.shape[1] != 3:
-        raise ValueError("fill_colors must have 3 columns (R, G, B)")
-    if edge_colors.shape[1] != 3:
-        raise ValueError("edge_colors must have 3 columns (R, G, B)")
-    if fill_colors.ndim != 2:
-        raise ValueError("fill_colors must be a 2D array")
-    if edge_colors.ndim != 2:
-        raise ValueError("edge_colors must be a 2D array")
-    if fill_alpha.ndim != 1:
-        raise ValueError("fill_alpha must be a 1D array")
-    if edge_alpha.ndim != 1:
-        raise ValueError("edge_alpha must be a 1D array")
-    if thickness.ndim != 1:
-        raise ValueError("thickness must be a 1D array")
-
-    draw_rectangles_jit(image, rectangles, fill_colors, fill_alpha, thickness, edge_colors, edge_alpha)
-    return image
 
 
 @njit(cache=True, fastmath=True, nogil=True)

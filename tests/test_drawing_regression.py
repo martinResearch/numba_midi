@@ -11,7 +11,6 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from numba_midi.canvas_numpy import NumPyCanvas
 from numba_midi.midi_draw import (
     ColorTheme,
     draw_controls,
@@ -21,6 +20,7 @@ from numba_midi.midi_draw import (
     PianorollBox,
     TrackColors,
 )
+from numba_midi.numba_draw import NumPyCanvas
 from numba_midi.score import (
     ControlArray,
     NoteArray,

@@ -65,6 +65,252 @@ DRUM_CHANNEL = 9  # Midi convention
 
 
 @dataclass
+class Tempo:
+    """MIDI tempo representation."""
+
+    time: float
+    tick: int
+    quarter_notes_per_minute: float
+
+    def __post_init__(self) -> None:
+        assert self.time >= 0, "Time must be non-negative"
+        assert self.tick >= 0, "Tick must be non-negative"
+        assert self.quarter_notes_per_minute > 0, "QNPM must be positive"
+
+    def __repr__(self) -> str:
+        return f"Tempo(time={self.time}, tick={self.tick}, quarter_notes_per_minute={self.quarter_notes_per_minute})"
+
+
+class Tempos:
+    """Wrapper for a structured numpy array with tempo_dtype elements."""
+
+    @overload
+    def __init__(
+        self,
+        quarter_notes_per_minute: np.ndarray | list[float],
+        *,
+        time: np.ndarray | list[float],
+        tick: None = None,
+        ticks_per_quarter: int,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        quarter_notes_per_minute: np.ndarray | list[float],
+        *,
+        tick: np.ndarray | list[int],
+        time: None = None,
+        ticks_per_quarter: int,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        quarter_notes_per_minute: np.ndarray | list[float],
+        *,
+        tick: np.ndarray | list[int],
+        time: np.ndarray | list[float],
+        ticks_per_quarter: None = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        quarter_notes_per_minute: np.ndarray | list[float],
+        *,
+        tick: np.ndarray | list[int] | None = None,
+        time: np.ndarray | list[float] | None = None,
+        ticks_per_quarter: int | None = None,
+    ) -> None:
+        if isinstance(quarter_notes_per_minute, list):
+            quarter_notes_per_minute = np.array(quarter_notes_per_minute, dtype=np.float64)
+        if time is None and tick is None:
+            raise ValueError("Must provide either time or tick, or both")
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+
+        if isinstance(tick, list):
+            tick = np.array(tick, dtype=np.int32)
+
+        if time is None:
+            assert ticks_per_quarter is not None, "ticks_per_quarter must be provided if time is None"
+            assert tick is not None, "tick must be provided if time is None"
+            time = compute_tempo_times(
+                tick=tick, quarter_notes_per_minute=quarter_notes_per_minute, ticks_per_quarter=ticks_per_quarter
+            )
+        elif tick is None:
+            assert ticks_per_quarter is not None, "ticks_per_quarter must be provided if tick is None"
+            assert time is not None, "time must be provided if tick is None"
+            tick = compute_tempo_ticks(
+                time=time, quarter_notes_per_minute=quarter_notes_per_minute, ticks_per_quarter=ticks_per_quarter
+            )
+
+        data = np.empty(len(time), dtype=tempo_dtype)
+        # compute ticks from quarter_notes_per_minute and time
+        data["tick"] = tick
+        data["time"] = time
+        data["quarter_notes_per_minute"] = quarter_notes_per_minute
+        self._data = data
+
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "Tempos":
+        if data.dtype != tempo_dtype:
+            raise ValueError("Invalid dtype for Controls")
+        if data.ndim != 1:
+            raise ValueError("Controls must be 1D")
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._data = data
+        return instance
+
+    @classmethod
+    def zeros(cls, size: int) -> "Tempos":
+        """Initialize the Tempos with zeros."""
+        return Tempos.from_array(np.zeros(size, dtype=tempo_dtype))
+
+    @classmethod
+    def concatenate(cls, arrays: Iterable["Tempos"]) -> "Tempos":
+        """Concatenate multiple Temposs."""
+        data = np.concatenate([arr._data for arr in arrays])
+        return cls.from_array(data)
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._data["time"]
+
+    @time.setter
+    def time(self, value: np.ndarray) -> None:
+        self._data["time"][:] = value
+
+    @property
+    def tick(self) -> np.ndarray:
+        return self._data["tick"]
+
+    @tick.setter
+    def tick(self, value: np.ndarray) -> None:
+        self._data["tick"][:] = value
+
+    @property
+    def quarter_notes_per_minute(self) -> np.ndarray:
+        return self._data["quarter_notes_per_minute"]
+
+    @quarter_notes_per_minute.setter
+    def quarter_notes_per_minute(self, value: np.ndarray) -> None:
+        self._data["quarter_notes_per_minute"][:] = value
+
+    @overload
+    def __getitem__(self, index: int) -> Tempo: ...
+    @overload
+    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "Tempos": ...
+
+    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Tempos|Tempo":
+        if isinstance(index, int):
+            result = self._data[index]
+            return Tempo(
+                float(result["time"]),
+                int(result["tick"]),
+                float(result["quarter_notes_per_minute"]),
+            )
+        result = self._data[index]
+        return Tempos.from_array(result)  # Return new wrapper for slices or boolean arrays
+
+    def __setitem__(self, index: int | slice | np.ndarray, value: "Tempos") -> None:
+        self._data[index] = value._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def as_array(self) -> np.ndarray:
+        return self._data
+
+    @property
+    def size(self) -> int:
+        return self._data.size
+
+    def __iter__(self) -> Generator[Tempo, None, None]:
+        for i in range(len(self._data)):
+            yield Tempo(self.time[i], self.tick[i], self.quarter_notes_per_minute[i])
+
+    def recompute_times(self, ticks_per_quarter: int) -> None:
+        recompute_tempo_times(self._data, ticks_per_quarter)
+
+
+class TickTime:
+    """MIDI tick and time representation."""
+
+    @overload
+    def __init__(
+        self,
+        *,
+        tick: None = None,
+        time: np.ndarray | list[float],
+        tempo: Tempos,
+        ticks_per_quarter: int,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        *,
+        tick: np.ndarray | list[int],
+        time: None = None,
+        tempo: Tempos,
+        ticks_per_quarter: int,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        *,
+        tick: np.ndarray | list[int],
+        time: np.ndarray | list[float],
+        tempo: Tempos = None,
+        ticks_per_quarter: None = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        *,
+        tick: np.ndarray | list[int] | None = None,
+        time: np.ndarray | list[float] | None = None,
+        tempo: Tempos | None = None,
+        ticks_per_quarter: int | None = None,
+    ):
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+        if isinstance(tick, list):
+            tick = np.array(tick, dtype=np.int32)
+        if tick is None:
+            assert ticks_per_quarter is not None, "ticks_per_quarter must be provided if tick is None"
+            assert time is not None, "time must be provided if tick is None"
+            assert tempo is not None, "tempo must be provided if tick is None"
+            time, tick = round_to_ticks(
+                time=time,
+                tempo=tempo,
+                ticks_per_quarter=ticks_per_quarter,
+            )
+
+        if time is None:
+            assert ticks_per_quarter is not None, "ticks_per_quarter must be provided if time is None"
+            assert tick is not None, "tick must be provided if time is None"
+            assert tempo is not None, "tempo must be provided if time is None"
+            time = ticks_to_times(
+                tick=tick,
+                tempo=tempo,
+                ticks_per_quarter=ticks_per_quarter,
+            )
+        if len(tick) != len(time):
+            raise ValueError("tick and time must have the same length")
+        self.tick = tick
+        self.time = time
+
+    def __repr__(self) -> str:
+        return f"TickTime(tick={self.tick}, time={self.time})"
+
+    def __len__(self) -> int:
+        return len(self.tick)
+
+
+@dataclass
 class Signature:
     """MIDI time signature representation."""
 
@@ -89,17 +335,12 @@ class Signatures:
 
     def __init__(
         self,
-        time: np.ndarray | list[float],
-        tick: np.ndarray | list[int],
+        ticktime: TickTime,
         numerator: np.ndarray | list[int],
         denominator: np.ndarray | list[int],
         clocks_per_click: np.ndarray | list[int],
         notated_32nd_notes_per_beat: np.ndarray | list[int],
     ) -> None:
-        if isinstance(time, list):
-            time = np.array(time, dtype=np.float64)
-        if isinstance(tick, list):
-            tick = np.array(tick, dtype=np.int32)
         if isinstance(numerator, list):
             numerator = np.array(numerator, dtype=np.int32)
         if isinstance(denominator, list):
@@ -108,9 +349,10 @@ class Signatures:
             clocks_per_click = np.array(clocks_per_click, dtype=np.int32)
         if isinstance(notated_32nd_notes_per_beat, list):
             notated_32nd_notes_per_beat = np.array(notated_32nd_notes_per_beat, dtype=np.int32)
-        data = np.empty(len(time), dtype=signature_dtype)
-        data["time"] = time
-        data["tick"] = tick
+        data = np.empty(len(numerator), dtype=signature_dtype)
+
+        data["time"] = ticktime.time
+        data["tick"] = ticktime.tick
         data["numerator"] = numerator
         data["denominator"] = denominator
         data["clocks_per_click"] = clocks_per_click
@@ -233,29 +475,21 @@ class Notes:
 
     def __init__(
         self,
-        start: np.ndarray | list[float],
-        start_tick: np.ndarray | list[int],
-        duration: np.ndarray | list[float],
-        duration_tick: np.ndarray | list[int],
+        start: TickTime,
+        end: TickTime,
         pitch: np.ndarray | list[int],
         velocity: np.ndarray | list[int],
     ) -> None:
-        if isinstance(start, list):
-            start = np.array(start, dtype=np.float64)
-        if isinstance(start_tick, list):
-            start_tick = np.array(start_tick, dtype=np.int32)
-        if isinstance(duration, list):
-            duration = np.array(duration, dtype=np.float64)
-        if isinstance(duration_tick, list):
-            duration_tick = np.array(duration_tick, dtype=np.int32)
+        duration = end.time - start.time
+        duration_tick = end.tick - start.tick
         if isinstance(pitch, list):
             pitch = np.array(pitch, dtype=np.int32)
         if isinstance(velocity, list):
             velocity = np.array(velocity, dtype=np.uint8)
 
         data = np.empty(len(start), dtype=note_dtype)
-        data["start"] = start
-        data["start_tick"] = start_tick
+        data["start"] = start.time
+        data["start_tick"] = start.tick
         data["duration"] = duration
         data["duration_tick"] = duration_tick
         data["pitch"] = pitch
@@ -406,22 +640,23 @@ class Controls:
 
     def __init__(
         self,
-        time: np.ndarray | list[float],
-        tick: np.ndarray | list[int],
-        number: np.ndarray | list[int],
-        value: np.ndarray | list[int],
+        ticktime: TickTime,
+        number: np.ndarray | list[int] | None = None,
+        value: np.ndarray | list[int] | None = None,
     ) -> None:
-        if isinstance(time, list):
-            time = np.array(time, dtype=np.float64)
-        if isinstance(tick, list):
-            tick = np.array(tick, dtype=np.int32)
         if isinstance(number, list):
             number = np.array(number, dtype=np.int32)
         if isinstance(value, list):
             value = np.array(value, dtype=np.int32)
-        data = np.empty(len(time), dtype=control_dtype)
-        data["time"] = time
-        data["tick"] = tick
+
+        if isinstance(number, list):
+            number = np.array(number, dtype=np.int32)
+        if isinstance(value, list):
+            value = np.array(value, dtype=np.int32)
+
+        data = np.empty(len(ticktime), dtype=control_dtype)
+        data["time"] = ticktime.time
+        data["tick"] = ticktime.tick
         data["number"] = number
         data["value"] = value
         self._data = data
@@ -545,19 +780,13 @@ class Pedals:
 
     def __init__(
         self,
-        time: np.ndarray | list[float],
-        tick: np.ndarray | list[int],
-        duration: np.ndarray | list[float],
+        start: TickTime,
+        end: TickTime,
     ) -> None:
-        if isinstance(time, list):
-            time = np.array(time, dtype=np.float64)
-        if isinstance(tick, list):
-            tick = np.array(tick, dtype=np.int32)
-        if isinstance(duration, list):
-            duration = np.array(duration, dtype=np.float64)
-        data = np.empty(len(time), dtype=note_dtype)
-        data["time"] = time
-        data["tick"] = tick
+        duration = end.time - start.time
+        data = np.empty(len(start.time), dtype=note_dtype)
+        data["time"] = start.time
+        data["tick"] = start.tick
         data["duration"] = duration
         self._data = data
 
@@ -673,19 +902,14 @@ class PitchBends:
 
     def __init__(
         self,
-        time: np.ndarray | list[float],
-        tick: np.ndarray | list[int],
+        ticktime: TickTime,
         value: np.ndarray | list[int],
     ) -> None:
-        if isinstance(time, list):
-            time = np.array(time, dtype=np.float64)
-        if isinstance(tick, list):
-            tick = np.array(tick, dtype=np.int32)
         if isinstance(value, list):
             value = np.array(value, dtype=np.int32)
-        data = np.empty(len(time), dtype=note_dtype)
-        data["time"] = time
-        data["tick"] = tick
+        data = np.empty(len(value), dtype=note_dtype)
+        data["time"] = ticktime.time
+        data["tick"] = ticktime.tick
         data["value"] = value
         self._data = data
 
@@ -772,124 +996,41 @@ class PitchBends:
             )
 
 
-@dataclass
-class Tempo:
-    """MIDI tempo representation."""
+def compute_tempo_ticks(time: np.ndarray, quarter_notes_per_minute: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
+    """Convert tempo times to ticks.
+    We cannot use times_to_tick because it uses both tempo times and ticks.
+    """
+    if len(time) != len(quarter_notes_per_minute):
+        raise ValueError("Times and quarter_notes_per_minute must have the same length")
+    ticks = np.zeros_like(time, dtype=np.int32)
 
-    time: float
-    tick: int
-    quarter_notes_per_minute: float
+    quarter_notes_per_minute_init = 120  # Default value for the first tempo
+    ticks[0] = time[0] * ticks_per_quarter / (60 / quarter_notes_per_minute_init)
 
-    def __post_init__(self) -> None:
-        assert self.time >= 0, "Time must be non-negative"
-        assert self.tick >= 0, "Tick must be non-negative"
-        assert self.quarter_notes_per_minute > 0, "QNPM must be positive"
+    delta_time = np.diff(time)
+    delta_tick_float = ticks_per_quarter * (delta_time * quarter_notes_per_minute[:-1]) / 60
+    cumulated_tick = np.cumsum(delta_tick_float)
+    tick = np.round(cumulated_tick).astype(np.int32)
 
-    def __repr__(self) -> str:
-        return f"Tempo(time={self.time}, tick={self.tick}, quarter_notes_per_minute={self.quarter_notes_per_minute})"
+    return tick
 
 
-class Tempos:
-    """Wrapper for a structured numpy array with tempo_dtype elements."""
+def compute_tempo_times(tick: np.ndarray, quarter_notes_per_minute: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
+    """Compute tempo times from ticks and quarter_notes_per_minute."""
+    if tick.ndim != 1:
+        raise ValueError("Ticks must be a 1D array")
 
-    def __init__(
-        self,
-        time: np.ndarray | list[float],
-        tick: np.ndarray | list[int],
-        quarter_notes_per_minute: np.ndarray | list[float],
-    ) -> None:
-        if isinstance(time, list):
-            time = np.array(time, dtype=np.float64)
-        if isinstance(tick, list):
-            tick = np.array(tick, dtype=np.int32)
-        if isinstance(quarter_notes_per_minute, list):
-            quarter_notes_per_minute = np.array(quarter_notes_per_minute, dtype=np.float64)
-        data = np.empty(len(time), dtype=tempo_dtype)
-        data["time"] = time
-        data["tick"] = tick
-        data["quarter_notes_per_minute"] = quarter_notes_per_minute
-        self._data = data
+    # Initialize the time array
+    times = np.zeros(tick.shape[0], dtype=np.float64)
+    quarter_notes_per_minute_init = 120
+    times[0] = tick[0] * (60 / ticks_per_quarter) / quarter_notes_per_minute_init
 
-    @classmethod
-    def from_array(cls, data: np.ndarray) -> "Tempos":
-        if data.dtype != tempo_dtype:
-            raise ValueError("Invalid dtype for Controls")
-        if data.ndim != 1:
-            raise ValueError("Controls must be 1D")
-        instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
-        return instance
+    # Compute tempo times using vectorization
+    delta_ticks = np.diff(tick)
+    delta_times = (delta_ticks * 60 / ticks_per_quarter) / quarter_notes_per_minute[:-1]
+    times[1:] = np.cumsum(delta_times) + times[0]
 
-    @classmethod
-    def zeros(cls, size: int) -> "Tempos":
-        """Initialize the Tempos with zeros."""
-        return Tempos.from_array(np.zeros(size, dtype=tempo_dtype))
-
-    @classmethod
-    def concatenate(cls, arrays: Iterable["Tempos"]) -> "Tempos":
-        """Concatenate multiple Temposs."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
-
-    @property
-    def time(self) -> np.ndarray:
-        return self._data["time"]
-
-    @time.setter
-    def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
-
-    @property
-    def tick(self) -> np.ndarray:
-        return self._data["tick"]
-
-    @tick.setter
-    def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
-
-    @property
-    def quarter_notes_per_minute(self) -> np.ndarray:
-        return self._data["quarter_notes_per_minute"]
-
-    @quarter_notes_per_minute.setter
-    def quarter_notes_per_minute(self, value: np.ndarray) -> None:
-        self._data["quarter_notes_per_minute"][:] = value
-
-    @overload
-    def __getitem__(self, index: int) -> Tempo: ...
-    @overload
-    def __getitem__(self, index: np.ndarray | slice | list[int]) -> "Tempos": ...
-
-    def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Tempos|Tempo":
-        if isinstance(index, int):
-            result = self._data[index]
-            return Tempo(
-                float(result["time"]),
-                int(result["tick"]),
-                float(result["quarter_notes_per_minute"]),
-            )
-        result = self._data[index]
-        return Tempos.from_array(result)  # Return new wrapper for slices or boolean arrays
-
-    def __setitem__(self, index: int | slice | np.ndarray, value: "Tempos") -> None:
-        self._data[index] = value._data
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def as_array(self) -> np.ndarray:
-        return self._data
-
-    @property
-    def size(self) -> int:
-        return self._data.size
-
-    def __iter__(self) -> Generator[Tempo, None, None]:
-        for i in range(len(self._data)):
-            yield Tempo(self.time[i], self.tick[i], self.quarter_notes_per_minute[i])
-
-    def recompute_times(self, ticks_per_quarter: int) -> None:
-        recompute_tempo_times(self._data, ticks_per_quarter)
+    return times
 
 
 @dataclass
@@ -960,6 +1101,12 @@ class Score:
     time_signature: Signatures  # 1D structured numpy array with signature_dtype elements
     lyrics: list[tuple[int, str]] | None = None
     ticks_per_quarter: int = 480
+
+    def post_init(self) -> None:
+        # check last tick is positive , int and not nan
+        assert self.last_tick > 0, "Last tick must be a positive integer"
+        assert isinstance(self.last_tick, int), "Last tick must be an integer"
+        assert not np.isnan(self.last_tick), "Last tick must not be NaN"
 
     @property
     def num_notes(self) -> int:
@@ -1431,14 +1578,13 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         tempo_events.value2[:] = 0
         tempo_events.tick[:] = 0
 
-    tempo_events_times = get_event_times(tempo_events._data, tempo_events._data, midi_score.ticks_per_quarter)
-
     # tempo event value1 correspond to the tempo in microseconds per quarter note
     # convert
     tempo = Tempos(
-        time=tempo_events_times,
         tick=tempo_events.tick,
         quarter_notes_per_minute=60000000 / tempo_events.value1,
+        ticks_per_quarter=ticks_per_quarter,
+        time=None,
     )
 
     # get all the signature events
@@ -1459,10 +1605,12 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
         signature_events.value1[:] = 4
         signature_events.value2[:] = 2
 
-    signature_events_times = get_event_times(signature_events._data, tempo_events._data, midi_score.ticks_per_quarter)
     signature = Signatures(
-        time=signature_events_times,
-        tick=signature_events.tick,
+        ticktime=TickTime(
+            tick=signature_events.tick,
+            tempo=tempo,
+            ticks_per_quarter=ticks_per_quarter,
+        ),
         numerator=signature_events.value1,
         denominator=2**signature_events.value2,
         clocks_per_click=signature_events.value3,

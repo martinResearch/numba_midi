@@ -245,7 +245,8 @@ def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per
     """Get the time of each event in ticks and seconds."""
     tick = np.uint32(0)
     time = 0.0
-    second_per_tick = 0.0
+    quarter_notes_per_minute_init = 120.0  # Default tempo for the first event
+    second_per_tick = quarter_notes_per_minute_init / ticks_per_quarter / 60.0
     events_times = np.zeros((len(midi_events)), dtype=np.float32)
 
     ref_tick = 0

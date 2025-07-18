@@ -1,6 +1,7 @@
-[build-system]
+[tool.pytest.ini_options]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+testpaths = ["tests"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -43,3 +44,4 @@ Homepage = "https://github.com/martinResearch/numba_midi"
 
 [tool.setuptools.package-data]
 "numba_midi" = ["py.typed"]
+

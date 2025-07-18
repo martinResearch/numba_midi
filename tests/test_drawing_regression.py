@@ -21,17 +21,7 @@ from numba_midi.midi_draw import (
     TrackColors,
 )
 from numba_midi.numba_draw import NumPyCanvas
-from numba_midi.score import (
-    Controls,
-    load_score,
-    Notes,
-    Pedals,
-    PitchBends,
-    Score,
-    Signatures,
-    Tempos,
-    Track,
-)
+from numba_midi.score import Controls, load_score, Notes, Pedals, PitchBends, Score, Signatures, Tempos, TickTime, Track
 
 # Directory to store the LKG (Last Known Good) images
 LKG_DIR = Path(__file__).parent / "data" / "midi_draw"
@@ -42,7 +32,11 @@ def create_score_with_notes() -> Score:
     """Create a simple score with a few notes."""
     tempo = Tempos(time=[0], tick=[0], quarter_notes_per_minute=[120])
     time_signature = Signatures(
-        time=[0], tick=[0], numerator=[4], denominator=[4], clocks_per_click=[24], notated_32nd_notes_per_beat=[8]
+        ticktime=TickTime(tick=[0], time=[0]),
+        numerator=[4],
+        denominator=[4],
+        clocks_per_click=[24],
+        notated_32nd_notes_per_beat=[8],
     )
     score = Score(tracks=[], tempo=tempo, last_tick=480 * 50, time_signature=time_signature)
     track = Track(

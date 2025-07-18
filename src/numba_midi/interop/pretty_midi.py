@@ -11,6 +11,7 @@ from numba_midi.score import (
     Score,
     Signatures,
     Tempos,
+    TickTime,
     Track,
 )
 
@@ -74,8 +75,10 @@ def from_pretty_midi(midi: pretty_midi.PrettyMIDI) -> Score:
     time_signatures = Signatures(
         numerator=[event.numerator for event in midi.time_signature_changes],
         denominator=[event.denominator for event in midi.time_signature_changes],
-        tick=[midi.time_to_tick(event.time) for event in midi.time_signature_changes],
-        time=[event.time for event in midi.time_signature_changes],
+        ticktime=TickTime(
+            tick=[midi.time_to_tick(event.time) for event in midi.time_signature_changes],
+            time=[event.time for event in midi.time_signature_changes],
+        ),
         clocks_per_click=[clocks_per_click],
         notated_32nd_notes_per_beat=[notated_32nd_notes_per_beat],
     )

@@ -5,16 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from numba_midi.score import (
-    Controls,
-    load_score,
-    Pedals,
-    PitchBends,
-    Score,
-    Signatures,
-    Tempos,
-    Track,
-)
+from numba_midi.score import Controls, load_score, Pedals, PitchBends, Score, Signatures, Tempos, TickTime, Track
 from numba_midi.utils import get_bar_duration, get_bpm_from_quarter_notes_per_minute
 
 
@@ -46,8 +37,7 @@ def test_signature() -> None:
         time_signature = Signatures(
             numerator=[numerator],
             denominator=[denominator],
-            tick=[0],
-            time=[0.0],
+            ticktime=TickTime(tick=[0], time=[0.0]),
             clocks_per_click=[24],
             notated_32nd_notes_per_beat=[8],
         )

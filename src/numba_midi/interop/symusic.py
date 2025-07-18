@@ -4,16 +4,7 @@ import numpy as np
 import symusic
 import symusic.types
 
-from numba_midi.score import (
-    Controls,
-    Notes,
-    Pedals,
-    PitchBends,
-    Score,
-    Signatures,
-    Tempos,
-    Track,
-)
+from numba_midi.score import Controls, Notes, Pedals, PitchBends, Score, Signatures, Tempos, TickTime, Track
 
 
 def from_symusic(symusic_score: symusic.types.Score) -> Score:
@@ -91,8 +82,7 @@ def from_symusic(symusic_score: symusic.types.Score) -> Score:
     notated_32nd_notes_per_beat = 0
 
     time_signature = Signatures(
-        time=[0],
-        tick=[0],
+        ticktime=TickTime(tick=[0], time=[0]),
         numerator=[numerator],
         denominator=[denominator],
         clocks_per_click=[clocks_per_click],

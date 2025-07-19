@@ -28,7 +28,7 @@ def to_tinysoundfont(score: Score) -> list[tinysoundfont.midi.Event]:
                     persistent=True,
                 )
             )
-            note_end = note.start + note.duration
+            note_end = note.end
             midi_events.append(
                 tinysoundfont.midi.Event(
                     action=tinysoundfont.midi.NoteOff(int(note.pitch)),

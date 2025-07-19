@@ -120,7 +120,7 @@ def to_pretty_midi(score: Score) -> pretty_midi.PrettyMIDI:
                     velocity=note.velocity,
                     pitch=note.pitch,
                     start=note.start,
-                    end=note.start + note.duration,
+                    end=note.end,
                 )
             )
         for control in track.controls:

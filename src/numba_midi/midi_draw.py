@@ -354,7 +354,7 @@ def notes_to_rectangles(notes: Notes, box: PianorollBox, height: int, width: int
         (
             (notes.start - pixel_mapping.time_left) * pixel_mapping.pixels_per_second,
             (pixel_mapping.pitch_top - notes.pitch - 0.5) * pixel_mapping.pixels_per_pitch,
-            1 + (notes.start + notes.duration - pixel_mapping.time_left) * pixel_mapping.pixels_per_second,
+            1 + (notes.end - pixel_mapping.time_left) * pixel_mapping.pixels_per_second,
             ((pixel_mapping.pitch_top - notes.pitch) + 0.5) * pixel_mapping.pixels_per_pitch,
         )
     ).astype(np.int32)

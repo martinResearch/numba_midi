@@ -469,6 +469,16 @@ class Note:
         assert 0 <= self.pitch < 128, "Pitch must be between 0 and 127"
         assert 0 <= self.velocity <= 127, "Velocity must be between 0 and 127"
 
+    @property
+    def end(self) -> float:
+        """End time of the note."""
+        return self.start + self.duration
+
+    @property
+    def end_tick(self) -> int:
+        """End tick of the note."""
+        return self.start_tick + self.duration_tick
+
 
 class Notes:
     """Wrapper for a structured numpy array with note_dtype elements."""
@@ -524,6 +534,14 @@ class Notes:
     @start.setter
     def start(self, value: np.ndarray) -> None:
         self._data["start"][:] = value
+
+    @property
+    def end(self) -> np.ndarray:
+        return self._data["start"] + self._data["duration"]
+
+    @property
+    def end_tick(self) -> np.ndarray:
+        return self._data["start_tick"] + self._data["duration_tick"]
 
     @property
     def start_tick(self) -> np.ndarray:
@@ -1074,7 +1092,7 @@ class Track:
         """Get the last tick of the track."""
         last_tick = 0
         if len(self.notes) > 0:
-            last_tick = np.max(self.notes.start_tick + self.notes.duration_tick)
+            last_tick = np.max(self.notes.end_tick)
         if len(self.controls) > 0:
             last_tick = max(last_tick, np.max(self.controls.tick))
         if len(self.pedals) > 0:
@@ -1091,16 +1109,24 @@ class Track:
         )
 
 
-@dataclass
 class Score:
     """MIDI score representation."""
 
-    tracks: list[Track]
-    last_tick: int
-    tempo: Tempos  # 1D structured numpy array with tempo_dtype elements
-    time_signature: Signatures  # 1D structured numpy array with signature_dtype elements
-    lyrics: list[tuple[int, str]] | None = None
-    ticks_per_quarter: int = 480
+    def __init__(
+        self,
+        tracks: list[Track],
+        last_tick: int,
+        tempo: Tempos,
+        time_signature: Signatures,
+        lyrics: list[tuple[int, str]] | None = None,
+        ticks_per_quarter: int = 480,
+    ) -> None:
+        self.tracks = tracks
+        self.last_tick = last_tick
+        self.ticks_per_quarter = ticks_per_quarter
+        self.tempo = tempo
+        self.time_signature = time_signature
+        self.lyrics = lyrics if lyrics is not None else []
 
     def post_init(self) -> None:
         # check last tick is positive , int and not nan
@@ -1878,7 +1904,7 @@ def score_to_midi(score: Score) -> Midi:
         events.event_type[id_start : id_start + len(track.notes)] = 1
         events.value1[id_start : id_start + len(track.notes)] = track.notes.pitch
         events.value2[id_start : id_start + len(track.notes)] = 0
-        events.tick[id_start : id_start + len(track.notes)] = track.notes.start_tick + track.notes.duration_tick
+        events.tick[id_start : id_start + len(track.notes)] = track.notes.end_tick
         # assert np.all(track.notes.duration_tick > 0), "duration_tick should be strictly positive"
         id_start += len(track.notes)
 
@@ -2322,8 +2348,7 @@ def update_ticks(score: Score, tempo: Tempos) -> Score:
         new_track = copy(track)
         new_track.notes.start_tick = times_to_ticks(new_track.notes.start, tempo, score.ticks_per_quarter)
         new_track.notes.duration_tick = (
-            times_to_ticks(new_track.notes.start + new_track.notes.duration, tempo, score.ticks_per_quarter)
-            - new_track.notes.start_tick
+            times_to_ticks(new_track.notes.end, tempo, score.ticks_per_quarter) - new_track.notes.start_tick
         )
         new_track.pedals.tick = times_to_ticks(new_track.pedals.time, tempo, score.ticks_per_quarter)
         new_track.controls.tick = times_to_ticks(new_track.controls.time, tempo, score.ticks_per_quarter)
@@ -2360,8 +2385,8 @@ def crop_score(score: Score, start: float, end: float) -> Score:
 
     for track in score.tracks:
         notes = track.notes
-        notes_end = notes.start + notes.duration
-        notes_end_tick = notes.start_tick + notes.duration_tick
+        notes_end = notes.end
+        notes_end_tick = notes.end_tick
         notes_keep = (notes.start < end) & (notes_end > start)
         new_notes = notes[notes_keep]
         new_notes.start = np.maximum(new_notes.start - start, 0)
@@ -2511,9 +2536,9 @@ def assert_scores_equal(
         # sort not by pitch then tick
         # notes1= track1.notes
         # notes2= track2.notes
-        order1 = np.lexsort((np.arange(len(track1.notes)), track1.notes.start_tick, track1.notes.pitch))
+        order1: np.ndarray = np.lexsort((np.arange(len(track1.notes)), track1.notes.start_tick, track1.notes.pitch))
         notes1 = track1.notes[order1]
-        order2 = np.lexsort((np.arange(len(track2.notes)), track2.notes.start_tick, track2.notes.pitch))
+        order2: np.ndarray = np.lexsort((np.arange(len(track2.notes)), track2.notes.start_tick, track2.notes.pitch))
         notes2 = track2.notes[order2]
 
         min_len = min(len(notes1), len(notes2))
@@ -2532,8 +2557,8 @@ def assert_scores_equal(
             assert max_start_time_diff <= time_tol, (
                 f"Max note start time difference {max_start_time_diff}>{time_tol} in track {track_id}"
             )
-            notes_stop_1 = notes1.start + notes1.duration
-            notes_stop_2 = notes2.start + notes2.duration
+            notes_stop_1 = notes1.end
+            notes_stop_2 = notes2.end
             max_stop_diff = max(abs(notes_stop_1 - notes_stop_2))
             assert max_stop_diff <= time_tol, f"Max note end difference {max_stop_diff}>{time_tol} in track {track_id}"
             # max note velocity difference

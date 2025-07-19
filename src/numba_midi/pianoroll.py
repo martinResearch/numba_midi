@@ -293,7 +293,7 @@ def piano_roll_to_score(
 
         notes.start_tick = times_to_ticks(notes.start, tempo, ticks_per_quarter).astype(np.int32)
 
-        notes_ends = notes.start + notes.duration
+        notes_ends = notes.end
         notes_ends_tick = times_to_ticks(notes_ends, tempo, ticks_per_quarter).astype(np.int32)
         notes.duration_tick = notes_ends_tick - notes.start_tick
         check_no_overlapping_notes(notes)

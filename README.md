@@ -20,6 +20,7 @@ This library is implemented entirely in Python, making it portable and easy to m
 * Conversion functions from/to `pretty_midi` and `symusic`.
 * Timestamps and durations both in seconds and ticks.
 * Utility functions to draw colored pianorolls and control curves into numpy arrays.
+* Utility functions to edit score notes and controls.
 
 ## Installation
 

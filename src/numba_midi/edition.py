@@ -1,8 +1,8 @@
 """This module contains functions for editing MIDI scores."""
 
 import numpy as np
-from numba_midi.numba_2dengine import rectangles_segment_intersections
 
+from numba_midi.numba_2dengine import rectangles_segment_intersections
 from numba_midi.score import Score
 
 

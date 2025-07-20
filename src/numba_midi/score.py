@@ -338,8 +338,8 @@ class Signatures:
         ticktime: TickTime,
         numerator: np.ndarray | list[int],
         denominator: np.ndarray | list[int],
-        clocks_per_click: np.ndarray | list[int],
-        notated_32nd_notes_per_beat: np.ndarray | list[int],
+        clocks_per_click: np.ndarray | list[int] | None = None,
+        notated_32nd_notes_per_beat: np.ndarray | list[int] | None = None,
     ) -> None:
         if isinstance(numerator, list):
             numerator = np.array(numerator, dtype=np.int32)
@@ -350,6 +350,10 @@ class Signatures:
         if isinstance(notated_32nd_notes_per_beat, list):
             notated_32nd_notes_per_beat = np.array(notated_32nd_notes_per_beat, dtype=np.int32)
         data = np.empty(len(numerator), dtype=signature_dtype)
+        if clocks_per_click is None:
+            clocks_per_click = np.full(len(numerator), 24, dtype=np.uint8)
+        if notated_32nd_notes_per_beat is None:
+            notated_32nd_notes_per_beat = np.full(len(numerator), 8, dtype=np.uint8)
 
         data["time"] = ticktime.time
         data["tick"] = ticktime.tick

@@ -1,5 +1,6 @@
 """This module contains functions for editing MIDI scores."""
 
+from typing import Iterable
 import numpy as np
 
 from numba_midi.numba_2dengine import rectangles_segment_intersections
@@ -43,7 +44,7 @@ def quantize_interval(score: Score, start: float, end: float, quantization_per_n
 
 def find_notes_at_position(
     score: Score,
-    track_ids: list[int],
+    track_ids: Iterable[int],
     time: float,
     pitch: int,
     border_width_ratio: float = 0.2,
@@ -71,7 +72,7 @@ def find_notes_at_position(
 
 
 def find_notes_in_segment(
-    score: Score, track_ids: list[int], pitch1: int, pitch2: int, time_1: float, time_2: float
+    score: Score, track_ids: Iterable[int], pitch1: int, pitch2: int, time_1: float, time_2: float
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     """Find notes in the segment defined by time_1, time_2 and pitch1, pitch2."""
     selection = {}
@@ -100,7 +101,11 @@ def find_notes_in_segment(
 
 
 def find_notes_in_rectangle(
-    score: Score, track_ids: list[int], selection_rectangle: tuple[float, float, float, float], tol: float
+    score: Score,
+    track_ids: Iterable[int],
+    selection_rectangle: tuple[float, float, float, float],
+    tol: float,
+    both_sides: bool = False,
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     """Find notes in a selection rectangle defined by (t1, p1, t2, p2) with a tolerance."""
     t1, p1, t2, p2 = selection_rectangle
@@ -119,17 +124,23 @@ def find_notes_in_rectangle(
         pitches = track.notes.pitch
 
         # Use numpy operations to find notes in the selection rectangle
-        start_in_range = (note_starts <= time_end) & (note_ends >= time_start)
-        end_in_range = (note_ends >= time_start) & (note_starts <= time_end)
-        in_time_range = start_in_range | end_in_range
+        start_in_range = (note_starts <= time_end) & (note_starts >= time_start)
+        end_in_range = (note_ends >= time_start) & (note_ends <= time_end)
+        if both_sides:
+            in_time_range = start_in_range & end_in_range
+        else:
+            in_time_range = start_in_range | end_in_range
         in_pitch_range = (pitches >= pitch_bottom) & (pitches <= pitch_top)
         selected_indices = np.nonzero(in_time_range & in_pitch_range)[0]
-        sides = np.zeros(len(selected_indices), dtype=bool)  # Initialize sides array
+        num_selected = len(selected_indices)
+        if num_selected == 0:
+            continue
+        sides = np.zeros(num_selected, dtype=bool)  # Initialize sides array
         # -1 for start only in selection, 1 for end, 0 for both
-        sides = start_in_range[selected_indices] - end_in_range[selected_indices]
+        sides = np.where(start_in_range[selected_indices], np.where(end_in_range[selected_indices], 0, 1), -1)
+
         # Check if the notes are at the start or end of the selection rectangle
-        if len(selected_indices) > 0:
-            selection[track_id] = (selected_indices, sides)
+        selection[track_id] = (selected_indices, sides)
     return selection
 
 
@@ -143,6 +154,17 @@ def remove_selected_notes(score: Score, selected_notes: dict[int, tuple[np.ndarr
         selected_notes_sides[track_id] = np.zeros((len(new_notes_init[track_id])), dtype=bool)
         # remove the selected notes from the track
         track.notes.delete(selected_indices)
+
+
+def remove_notes_in_segment(
+    score: Score, track_ids: Iterable[int], pitch1: int, pitch2: int, time_1: float, time_2: float
+) -> bool:
+    """Remove notes in the segment defined by time_1, time_2 and pitch1, pitch2."""
+    selected_notes = find_notes_in_segment(score, track_ids, pitch1, pitch2, time_1, time_2)
+    if selected_notes:
+        remove_selected_notes(score, selected_notes)
+        return True
+    return False
 
 
 def move_selected_notes(

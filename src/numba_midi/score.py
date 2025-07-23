@@ -1590,7 +1590,7 @@ def get_pedals_from_controls(channel_controls: Controls) -> Pedals:
 
 
 def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: NotesMode = "note_off_stops_all") -> Score:
-    """Convert a MidiScore to a Score.
+    """Convert a Midi to a Score.
 
     Convert from event-based representation notes with durations
     """

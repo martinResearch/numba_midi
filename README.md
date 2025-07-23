@@ -35,7 +35,7 @@ pip install numba_midi
 ## Music Score Interfaces
 
 - **`Score`**: Represents a music score with notes as atomic items, including start times and durations. This approach is more convenient for offline processing compared to handling note-on and note-off events.
-- **`MidiScore`**: Mirrors raw MIDI data by using MIDI events, including note-on and note-off events. This class serves as an intermediate representation for reading and writing MIDI files.
+- **`Midi`**: Mirrors raw MIDI data by using MIDI events, including note-on and note-off events. This class serves as an intermediate representation for reading and writing MIDI files.
 
 ## Piano Roll
 

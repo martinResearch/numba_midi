@@ -129,7 +129,14 @@ def draw_pianoroll(
 ) -> None:
     """Draw the piano roll on the canvas."""
     draw_piano_roll_background(canvas=canvas, score=score, box=box, grid_options=grid_options, color_theme=color_theme)
-    draw_score_notes(canvas=canvas, box=box, track_colors=track_colors, score=score, highlighted_notes=highlighted_notes, highlighted_colors=highlighted_colors)
+    draw_score_notes(
+        canvas=canvas,
+        box=box,
+        track_colors=track_colors,
+        score=score,
+        highlighted_notes=highlighted_notes,
+        highlighted_colors=highlighted_colors,
+    )
 
 
 def draw_piano_roll_background(
@@ -368,12 +375,12 @@ def draw_score_notes(
     score: Score,
     box: PianorollBox,
     track_colors: TrackColors,
-    highlighted_notes: dict[int, np.ndarray]|None = None,
-    highlighted_colors: TrackColors|None = None,
+    highlighted_notes: dict[int, np.ndarray] | None = None,
+    highlighted_colors: TrackColors | None = None,
 ) -> None:
     for track_id, track in enumerate(score.tracks):
         if highlighted_notes is not None and track_id in highlighted_notes:
-            keep= np.ones(len(track.notes), dtype=bool)
+            keep = np.ones(len(track.notes), dtype=bool)
             keep[highlighted_notes[track_id]] = False
             notes = track.notes[keep]
         else:
@@ -435,8 +442,8 @@ def draw_velocities(
     time_right: float,
     track_colors: TrackColors,
     velocity_max_width_pixels: float,
-    highlighted_notes: dict[int, np.ndarray]| None = None,
-    highlighted_colors: TrackColors| None = None,
+    highlighted_notes: dict[int, np.ndarray] | None = None,
+    highlighted_colors: TrackColors | None = None,
 ) -> None:
     """Draw the velocity of the loaded MIDI score."""
     for track_id, track in enumerate(score.tracks):
@@ -460,7 +467,6 @@ def draw_velocities(
             thickness=thickness,
             alpha=alpha,
             velocity_max_width_pixels=velocity_max_width_pixels,
- 
         )
     if highlighted_notes is not None:
         assert highlighted_colors is not None, "Highlight colors must be provided if highlighted notes are present"
@@ -482,7 +488,6 @@ def draw_velocities(
                     alpha=alpha,
                     velocity_max_width_pixels=velocity_max_width_pixels,
                 )
-
 
 
 def draw_notes_velocities(

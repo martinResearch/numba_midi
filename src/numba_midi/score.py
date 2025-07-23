@@ -1317,8 +1317,13 @@ class Score:
         self.tracks.append(track)
 
     def add_notes(
-        self, track_id: int, time: np.ndarray|  list[float], duration: np.ndarray|  list[float], pitch: np.ndarray|  list[int], velocity: np.ndarray|  list[int]
-    ) -> None:
+        self,
+        track_id: int,
+        time: np.ndarray | list[float],
+        duration: np.ndarray | list[float],
+        pitch: np.ndarray | list[int],
+        velocity: np.ndarray | list[int],
+    ) -> np.ndarray:
         """Add notes to the score."""
         assert len(time) == len(duration) == len(pitch) == len(velocity), (
             "time, pitch and valocity must have the same length"

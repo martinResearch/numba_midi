@@ -1,11 +1,11 @@
 """This module contains functions for editing MIDI scores."""
 
 from typing import Iterable, Optional
+
 import numpy as np
 
 from numba_midi.numba_2dengine import rectangles_segment_intersections
-from numba_midi.score import Score
-from numba_midi.score import Notes
+from numba_midi.score import Notes, Score
 
 
 def remove_pitch_bend(score: Score, track_id: int, time: float) -> None:
@@ -156,10 +156,9 @@ def find_notes_in_rectangle(
         num_selected = len(selected_indices)
         if num_selected == 0:
             continue
-        sides = np.zeros(num_selected, dtype=bool)  # Initialize sides array
-        # -1 for start only in selection, 1 for end, 0 for both
-        sides = np.where(start_in_range[selected_indices], np.where(end_in_range[selected_indices], 0, 1), -1)
 
+        # -1 for start only in selection, 1 for end, 0 for both
+        sides = end_in_range[selected_indices] - start_in_range[selected_indices]
         # Check if the notes are at the start or end of the selection rectangle
         selection[track_id] = (selected_indices, sides)
     return selection
@@ -238,24 +237,25 @@ def paste_notes(
     pitch_offset: int = 0,
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
     """Paste notes into the score with an optional time and pitch offset.
-    return the new notes indices and selection sides."""
-
+    return the new notes indices and selection sides.
+    """
     selected_notes = {}
-    for track_id, notes in notes.items():
+    for track_id, track_notes in notes.items():
         num_score_notes = len(score.tracks[track_id].notes)
         score.add_notes(
             track_id,
-            time=notes.start + time_offset,
-            duration=notes.duration,
-            pitch=notes.pitch + pitch_offset,
-            velocity=notes.velocity,
+            time=track_notes.start + time_offset,
+            duration=track_notes.duration,
+            pitch=track_notes.pitch + pitch_offset,
+            velocity=track_notes.velocity,
         )
         selected_notes[track_id] = (
-            np.arange(num_score_notes, num_score_notes + len(notes)),
-            np.zeros(len(notes), dtype=np.int8),
+            np.arange(num_score_notes, num_score_notes + len(track_notes)),
+            np.zeros(len(track_notes), dtype=np.int8),
         )
 
     return selected_notes
+
 
 def edit_notes(
     score: Score,
@@ -265,10 +265,10 @@ def edit_notes(
     duration: np.ndarray,
     pitch: np.ndarray,
     velocity: np.ndarray,
-) -> np.ndarray:
+) -> None:
     """Edit notes in the score."""
     track = score.tracks[track_id]
-    
+
     new_notes = score.create_notes(
         start=start,
         pitch=pitch,
@@ -276,4 +276,4 @@ def edit_notes(
         velocity=velocity,
     )
     assert len(new_notes) == len(note_indices), "New notes length must match note indices length"
-    notes = track.notes[note_indices]= new_notes
+    track.notes[note_indices] = new_notes

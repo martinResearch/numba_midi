@@ -1317,12 +1317,20 @@ class Score:
         self.tracks.append(track)
 
     def add_notes(
-        self, track_id: int, time: np.ndarray, duration: np.ndarray, pitch: np.ndarray, velocity: np.ndarray
+        self, track_id: int, time: np.ndarray|  list[float], duration: np.ndarray|  list[float], pitch: np.ndarray|  list[int], velocity: np.ndarray|  list[int]
     ) -> None:
         """Add notes to the score."""
         assert len(time) == len(duration) == len(pitch) == len(velocity), (
             "time, pitch and valocity must have the same length"
         )
+        if isinstance(time, list):
+            time = np.array(time, dtype=np.float64)
+        if isinstance(duration, list):
+            duration = np.array(duration, dtype=np.float64)
+        if isinstance(pitch, list):
+            pitch = np.array(pitch, dtype=np.int32)
+        if isinstance(velocity, list):
+            velocity = np.array(velocity, dtype=np.int32)
         end = time + duration
         start, start_tick = self.round_to_ticks(time)
         end, end_ticks = self.round_to_ticks(end)
@@ -1335,7 +1343,9 @@ class Score:
         notes.pitch = pitch
         notes.velocity = velocity
         track = self.tracks[track_id]
+        new_notes_indices = np.arange(len(track.notes), len(track.notes) + len(notes))
         track.notes = Notes.concatenate((track.notes, notes))
+        return new_notes_indices
 
     def add_controls(self, track_id: int, time: np.ndarray, number: np.ndarray, value: np.ndarray) -> None:
         """Add controls to the score."""

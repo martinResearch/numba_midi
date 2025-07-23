@@ -1,10 +1,11 @@
 """This module contains functions for editing MIDI scores."""
 
-from typing import Iterable
+from typing import Iterable, Optional
 import numpy as np
 
 from numba_midi.numba_2dengine import rectangles_segment_intersections
 from numba_midi.score import Score
+from numba_midi.score import Notes
 
 
 def remove_pitch_bend(score: Score, track_id: int, time: float) -> None:
@@ -30,7 +31,7 @@ def remove_control(score: Score, track_id: int, time: float, control_number: int
 
 
 def quantize_interval(score: Score, start: float, end: float, quantization_per_note: int) -> tuple[float, float]:
-    """Quantize the interval defined by start and end to the nearest quarter note."""
+    """Quantize the interval defined by start and end to the quantization."""
     quarter_notes_start = score.time_to_quarter_note(start)
     subdivision = quantization_per_note
     quarter_notes_start = np.floor(quarter_notes_start * subdivision / 4) * (4 / subdivision)
@@ -61,7 +62,7 @@ def find_notes_at_position(
         overlapping = (notes.pitch == pitch) & (notes.start <= time) & (time <= notes.end)
         indices = np.nonzero(overlapping)[0]
         overlapping_notes = notes[indices]
-        border_width_sec = np.minimum(notes.duration * border_width_ratio, max_border_width_sec)
+        border_width_sec = np.minimum(notes.duration[indices] * border_width_ratio, max_border_width_sec)
         side = -1 * (time < overlapping_notes.start + border_width_sec) + 1 * (
             time > overlapping_notes.end - border_width_sec
         )
@@ -69,6 +70,26 @@ def find_notes_at_position(
             selection[track_id] = (indices, side)
 
     return selection
+
+
+def find_first_note_at_position(
+    score: Score, track_ids: Iterable[int], time: float, pitch: int
+) -> Optional[tuple[int, int, int]]:
+    """Find the first note at the given position."""
+    selected_notes = find_notes_at_position(
+        score=score,
+        track_ids=track_ids,
+        time=time,
+        pitch=pitch,
+    )
+    # keep only the first note that matches the position
+    if len(selected_notes) > 0:
+        track_id, (note_indices, sides) = list(selected_notes.items())[0]
+        note_index = int(note_indices[0])  # take only the first one
+        side = int(sides[0])
+        return (track_id, note_index, side)
+    else:
+        return None
 
 
 def find_notes_in_segment(
@@ -168,14 +189,20 @@ def remove_notes_in_segment(
 
 
 def move_selected_notes(
-    score: Score, selected_notes: dict[int, tuple[np.ndarray, np.ndarray]], pitch_delta: float, time_delta: float
+    score: Score,
+    selected_notes: dict[int, tuple[np.ndarray, np.ndarray]],
+    pitch_delta: float,
+    time_delta: float,
+    ref_score: Optional[Score] = None,
 ) -> None:
     """Move selected notes by pitch_delta and time_delta."""
     # Update all selected notes
+    if ref_score is None:
+        ref_score = score
 
     assert selected_notes is not None, "No notes selected for moving."
     for track_id, (note_indices, sides) in selected_notes.items():
-        track = score.tracks[track_id]
+        track = ref_score.tracks[track_id]
         notes = track.notes[note_indices]
         # Calculate new pitch and start time
         new_pitch = (notes.pitch + pitch_delta).astype(np.int32)
@@ -200,4 +227,53 @@ def move_selected_notes(
             duration=new_duration,
             velocity=velocity,
         )
-        track.notes[note_indices] = new_notes_track
+
+        score.tracks[track_id].notes[note_indices] = new_notes_track
+
+
+def paste_notes(
+    score: Score,
+    notes: dict[int, Notes],
+    time_offset: float = 0.0,
+    pitch_offset: int = 0,
+) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    """Paste notes into the score with an optional time and pitch offset.
+    return the new notes indices and selection sides."""
+
+    selected_notes = {}
+    for track_id, notes in notes.items():
+        num_score_notes = len(score.tracks[track_id].notes)
+        score.add_notes(
+            track_id,
+            time=notes.start + time_offset,
+            duration=notes.duration,
+            pitch=notes.pitch + pitch_offset,
+            velocity=notes.velocity,
+        )
+        selected_notes[track_id] = (
+            np.arange(num_score_notes, num_score_notes + len(notes)),
+            np.zeros(len(notes), dtype=np.int8),
+        )
+
+    return selected_notes
+
+def edit_notes(
+    score: Score,
+    note_indices: np.ndarray,
+    track_id: int,
+    start: np.ndarray,
+    duration: np.ndarray,
+    pitch: np.ndarray,
+    velocity: np.ndarray,
+) -> np.ndarray:
+    """Edit notes in the score."""
+    track = score.tracks[track_id]
+    
+    new_notes = score.create_notes(
+        start=start,
+        pitch=pitch,
+        duration=duration,
+        velocity=velocity,
+    )
+    assert len(new_notes) == len(note_indices), "New notes length must match note indices length"
+    notes = track.notes[note_indices]= new_notes

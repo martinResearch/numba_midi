@@ -140,6 +140,7 @@ class Rectangles:
         self.corners = corners
 
         # Convert single values to arrays
+
         if isinstance(fill_alpha, float):
             self.fill_alpha = np.full(num_rectangles, fill_alpha, dtype=np.float32)
         else:

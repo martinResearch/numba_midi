@@ -158,7 +158,8 @@ def find_notes_in_rectangle(
             continue
 
         # -1 for start only in selection, 1 for end, 0 for both
-        sides = end_in_range[selected_indices] - start_in_range[selected_indices]
+        sides = np.where(start_in_range[selected_indices], np.where(end_in_range[selected_indices], 0, 1), -1)
+        
         # Check if the notes are at the start or end of the selection rectangle
         selection[track_id] = (selected_indices, sides)
     return selection

@@ -1424,6 +1424,28 @@ class Score:
             track.pedals.time = self.ticks_to_times(track.pedals.tick)
             track.pitch_bends.time = self.ticks_to_times(track.pitch_bends.tick)
 
+    def set_time_signatures(
+        self,
+        time: np.ndarray| list[float],
+        numerator: np.ndarray| list[int],
+        denominator: np.ndarray| list[int],
+        clocks_per_click: np.ndarray |list[int]|None=None,
+        notated_32nd_notes_per_beat: np.ndarray | list[int] | None = None,
+    ) -> None:
+        time_signature = Signatures(
+            ticktime=TickTime(
+                time=time,
+                tempo=self.tempo,
+                ticks_per_quarter=self.ticks_per_quarter,
+            ),
+            numerator=[numerator],
+            denominator=[denominator],
+            clocks_per_click=clocks_per_click,
+            notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
+        )
+
+        self.time_signature = time_signature
+
     def times_to_beats(self, time: np.ndarray) -> np.ndarray:
         """Convert time to beats."""
         assert len(time) > 0, "Time must be a non-empty array"

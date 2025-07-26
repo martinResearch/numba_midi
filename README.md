@@ -4,8 +4,8 @@
 
 A Numba-accelerated Python library for fast MIDI file reading and music score processing.
 
-![pianoroll_mozart_lacrimosa](./tests/data/midi_draw/piano_roll_lkg2.png#gh-light-mode-only)
-![pianoroll_mozart_lacrimosa](./tests/data/midi_draw/piano_roll_lkg2_dark.png#gh-dark-mode-only)
+![pianoroll_mozart_lacrimosa](./tests/data/midi_draw/piano_roll_lkg_light.png#gh-light-mode-only)
+![pianoroll_mozart_lacrimosa](./tests/data/midi_draw/piano_roll_lkg_dark.png#gh-dark-mode-only)
 
 
 This library is implemented entirely in Python, making it portable and easy to modify and extend for Python developers. Efficiency is achieved by using NumPy structured arrays to store data instead of creating per-event or per-note Python class instances. The library leverages NumPy vectorized operations where possible and uses Numba for non-vectorizable operations. The set of dependencies is minimal and limited to `numpy` and `numba`.

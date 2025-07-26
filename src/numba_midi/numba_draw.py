@@ -44,6 +44,16 @@ class NumPyCanvas:
 
 
 @njit(cache=True, fastmath=True, nogil=True, boundscheck=False)
+def draw_rectangle_no_edge_jit(
+    image: np.ndarray, color: np.ndarray, x1: int, x2: int, y1: int, y2: int, alpha: float
+) -> None:
+    if alpha == 1.0:
+        image[y1:y2, x1:x2] = alpha * color
+    else:
+        image[y1:y2, x1:x2] = alpha * color + (1 - alpha) * image[y1:y2, x1:x2]
+
+
+@njit(cache=True, fastmath=True, nogil=True)
 def draw_rectangles_jit(
     image: np.ndarray,
     rectangles: np.ndarray,
@@ -92,13 +102,19 @@ def draw_rectangles_jit(
         rect_fill_alpha = fill_alpha[i]
         edge_color = edge_colors[i]
         rect_edge_alpha = edge_alpha[i]
+        # fill_color=np.array([0,0,255], dtype=np.uint8)
 
         # Draw the rectangle fill only if alpha is > 0
         if rect_fill_alpha > 0:
-            if rect_fill_alpha == 1:
-                image[y1:y2, x1:x2] = fill_color
-            else:
-                image[y1:y2, x1:x2] = rect_fill_alpha * fill_color + (1 - rect_fill_alpha) * image[y1:y2, x1:x2]
+            draw_rectangle_no_edge_jit(
+                image=image,
+                color=fill_color,
+                x1=x1,
+                x2=x2,
+                y1=y1,
+                y2=y2,
+                alpha=rect_fill_alpha,
+            )
 
         # Draw the rectangle edges only if thickness > 0 and edge_alpha > 0
         rec_thickness = thickness[i]
@@ -107,16 +123,18 @@ def draw_rectangles_jit(
             y2b = max(y2 - rec_thickness, y1)
             x1b = min(x1 + rec_thickness, x2)
             x2b = max(x2 - rec_thickness, x1)
-            if rect_edge_alpha == 1:
-                image[y1:y1b, x1:x2] = edge_color
-                image[y2b:y2, x1:x2] = edge_color
-                image[y1b:y2b, x1:x1b] = edge_color
-                image[y1b:y2b, x2b:x2] = edge_color
-            else:
-                image[y1:y1b, x1:x2] = rect_edge_alpha * edge_color + (1 - rect_edge_alpha) * image[y1:y1b, x1:x2]
-                image[y2b:y2, x1:x2] = rect_edge_alpha * edge_color + (1 - rect_edge_alpha) * image[y2b:y2, x1:x2]
-                image[y1b:y2b, x1:x1b] = rect_edge_alpha * edge_color + (1 - rect_edge_alpha) * image[y1b:y2b, x1:x1b]
-                image[y1b:y2b, x2b:x2] = rect_edge_alpha * edge_color + (1 - rect_edge_alpha) * image[y1b:y2b, x2b:x2]
+            draw_rectangle_no_edge_jit(
+                image=image, color=edge_color, x1=x1, x2=x2, y1=y1, y2=y1b, alpha=rect_edge_alpha
+            )
+            draw_rectangle_no_edge_jit(
+                image=image, color=edge_color, x1=x1, x2=x2, y1=y2b, y2=y2, alpha=rect_edge_alpha
+            )
+            draw_rectangle_no_edge_jit(
+                image=image, color=edge_color, x1=x1, x2=x1b, y1=y1, y2=y2, alpha=rect_edge_alpha
+            )
+            draw_rectangle_no_edge_jit(
+                image=image, color=edge_color, x1=x2b, x2=x2, y1=y1, y2=y2, alpha=rect_edge_alpha
+            )
 
 
 class Rectangles:
@@ -170,6 +188,7 @@ class Rectangles:
         assert self.fill_colors.shape[0] == num_rectangles, (
             "fill_colors must have the same number of rows as rectangles"
         )
+        assert self.fill_colors.dtype == np.uint8, "fill_colors must be of type np.uint8"
         # Handle edge colors
         if edge_colors is None:
             self.edge_colors = np.zeros_like(self.fill_colors, dtype=np.uint8)
@@ -180,6 +199,10 @@ class Rectangles:
                 "edge_colors must be a 2D array with 3 columns (R, G, B)"
             )
             self.edge_colors = edge_colors
+        assert self.edge_colors.dtype == np.uint8, "edge_colors must be of type np.uint8"
+        assert self.fill_alpha.dtype == np.float32, "fill_alpha must be of type np.float32"
+        assert self.edge_alpha.dtype == np.float32, "edge_alpha must be of type np.float32"
+        assert self.thickness.dtype == np.int32, "thickness must be of type np.int32"
 
     def filter_box(
         self,
@@ -212,6 +235,8 @@ class Rectangles:
             rectangles = self.filter_box(image.shape[0], image.shape[1])
             rectangles.draw(image, prefilter=False)
             return image
+
+        assert image.dtype == np.uint8
 
         draw_rectangles_jit(
             image=image,

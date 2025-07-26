@@ -1426,10 +1426,10 @@ class Score:
 
     def set_time_signatures(
         self,
-        time: np.ndarray| list[float],
-        numerator: np.ndarray| list[int],
-        denominator: np.ndarray| list[int],
-        clocks_per_click: np.ndarray |list[int]|None=None,
+        time: np.ndarray | list[float],
+        numerator: np.ndarray | list[int],
+        denominator: np.ndarray | list[int],
+        clocks_per_click: np.ndarray | list[int] | None = None,
         notated_32nd_notes_per_beat: np.ndarray | list[int] | None = None,
     ) -> None:
         time_signature = Signatures(
@@ -1438,8 +1438,8 @@ class Score:
                 tempo=self.tempo,
                 ticks_per_quarter=self.ticks_per_quarter,
             ),
-            numerator=[numerator],
-            denominator=[denominator],
+            numerator=numerator,
+            denominator=denominator,
             clocks_per_click=clocks_per_click,
             notated_32nd_notes_per_beat=notated_32nd_notes_per_beat,
         )

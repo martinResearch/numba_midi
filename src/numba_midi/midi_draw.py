@@ -8,6 +8,28 @@ import numpy as np
 from numba_midi.numba_draw import Rectangles
 from numba_midi.score import Controls, Notes, Score
 
+# 16 track colors with more distinct tones
+default_track_colors = np.array(
+    [
+        (255, 99, 71),  # Tomato
+        (60, 179, 113),  # Medium Sea Green
+        (30, 144, 255),  # Dodger Blue
+        (255, 215, 0),  # Gold
+        (138, 43, 226),  # Blue Violet
+        (0, 206, 209),  # Dark Turquoise
+        (169, 169, 169),  # Dark Gray
+        (220, 20, 60),  # Crimson
+        (50, 205, 50),  # Lime Green
+        (70, 130, 180),  # Steel Blue
+        (255, 140, 0),  # Dark Orange
+        (186, 85, 211),  # Medium Orchid
+        (0, 255, 127),  # Spring Green
+        (64, 224, 208),  # Turquoise
+        (255, 165, 0),  # Orange
+        (75, 0, 130),  # Indigo
+    ]
+)
+
 
 @dataclass
 class PianorollBox:
@@ -163,23 +185,23 @@ def draw_piano_roll_background(
     if grid_options.draw_pitches:
         pitches_rectangles = np.column_stack(
             (
-                np.zeros((127), dtype=np.int32),
-                (box.pitch_bottom - np.arange(127) - 0.5) * pixel_mapping.pixels_per_pitch,
-                np.full((127), width),
-                (box.pitch_top - np.arange(127) + 0.5) * pixel_mapping.pixels_per_pitch,
+                np.zeros((128), dtype=np.int32),
+                (box.pitch_top - np.arange(127, -1, -1) - 0.5) * pixel_mapping.pixels_per_pitch,
+                np.full((128), width),
+                (box.pitch_top - np.arange(127, -1, -1) + 0.5) * pixel_mapping.pixels_per_pitch,
             )
         ).astype(np.int32)
 
-        pitches_fill_colors = np.empty((127, 3), dtype=np.uint8)
+        pitches_fill_colors = np.empty((128, 3), dtype=np.uint8)
         pitches_fill_colors[1::2, 0] = color_theme.piano_roll_background_color_odd[0]
         pitches_fill_colors[1::2, 1] = color_theme.piano_roll_background_color_odd[1]
         pitches_fill_colors[1::2, 2] = color_theme.piano_roll_background_color_odd[2]
         pitches_fill_colors[::2, 0] = color_theme.piano_roll_background_color_even[0]
         pitches_fill_colors[::2, 1] = color_theme.piano_roll_background_color_even[1]
         pitches_fill_colors[::2, 2] = color_theme.piano_roll_background_color_even[2]
-        pitches_alpha = np.ones((127), dtype=np.float32)
-        pitches_edge_colors = np.zeros((127, 3), dtype=np.uint8)
-        pitches_thickness = np.zeros((127), dtype=np.int32)
+        pitches_alpha = np.ones((128), dtype=np.float32)
+        pitches_edge_colors = np.zeros((128, 3), dtype=np.uint8)
+        pitches_thickness = np.zeros((128), dtype=np.int32)
         canvas.draw_rectangles(
             Rectangles(
                 corners=pitches_rectangles,

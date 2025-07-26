@@ -231,15 +231,14 @@ def move_selected_notes(
         score.tracks[track_id].notes[note_indices] = new_notes_track
 
 
-def copy_selected_notes(
-    score: Score, selected_notes: dict[int, tuple[np.ndarray, np.ndarray]]
-) -> dict[int, Notes]:
+def copy_selected_notes(score: Score, selected_notes: dict[int, tuple[np.ndarray, np.ndarray]]) -> dict[int, Notes]:
     """Copy selected notes from the score."""
     new_notes = {}
     for track_id, (note_indices, _) in selected_notes.items():
         track = score.tracks[track_id]
         new_notes[track_id] = track.notes[note_indices]
     return new_notes
+
 
 def paste_notes(
     score: Score,

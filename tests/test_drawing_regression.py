@@ -244,7 +244,7 @@ def test_control_curve_drawing(update_lkg: bool = False) -> None:
     score = create_score_with_notes()
 
     # Create MidiDraw instance with default color theme and NumPy backend
-    canvas = NumPyCanvas(height=1000, width=500)
+    canvas = NumPyCanvas(height=100, width=400)
     canvas.clear(hex_to_rgb("#EEEEEE"))
 
     # Define the control view box (time range)
@@ -292,6 +292,6 @@ def test_control_curve_drawing(update_lkg: bool = False) -> None:
 
 if __name__ == "__main__":
     # When run directly, create/update the LKG images
-    # test_piano_roll_drawing(update_lkg=False)
+    test_piano_roll_drawing(update_lkg=True)
     test_piano_roll_drawing2(update_lkg=True)
-    # test_control_curve_drawing(update_lkg=False)
+    test_control_curve_drawing(update_lkg=True)

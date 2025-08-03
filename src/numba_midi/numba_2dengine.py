@@ -4,7 +4,7 @@ from numba.core.decorators import njit
 import numpy as np
 
 
-@njit(parallel=False, fastmath=True, cache=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def segment_vs_aabb(
     x1: float, y1: float, x2: float, y2: float, left: float, top: float, right: float, bottom: float
 ) -> bool:
@@ -55,7 +55,7 @@ def segment_vs_aabb(
     return True
 
 
-@njit(parallel=False, fastmath=True, cache=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def rectangles_segment_intersections(rectangles: np.ndarray, segment: np.ndarray) -> np.ndarray:
     """
     Find the intersection points of a set of rectangles with a line segment.

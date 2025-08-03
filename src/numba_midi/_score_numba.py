@@ -2,10 +2,11 @@ from numba.core.decorators import njit
 import numpy as np
 
 
-@njit(cache=True, boundscheck=False)
-def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, notes_mode: int) -> tuple[np.ndarray, np.ndarray]:
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
+def extract_notes_start_stop_jit(sorted_note_events: np.ndarray, notes_mode: int) -> tuple[np.ndarray, np.ndarray]:
     """Extract the notes from the sorted note events.
-    The note events are assumed to be sorted lexigographically by pitch, tick the original midi order.
+    The note events are assumed to be sorted lexigographically by pitch first, then tick,
+    then the original midi order.
 
     We provide control to the user on how to handle overlapping note and zero length notes
     through the parameter `notes_mode` that allows choosing among multiple modes:
@@ -70,8 +71,8 @@ def extract_notes_start_stop_numba(sorted_note_events: np.ndarray, notes_mode: i
     return np.array(note_start_ids), np.array(note_stop_ids)
 
 
-@njit(cache=True, boundscheck=False)
-def get_events_program(events: np.ndarray) -> np.ndarray:
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
+def get_events_program_jit(events: np.ndarray) -> np.ndarray:
     channel_to_program = np.full((16), -1, dtype=np.int32)
     program = np.zeros((len(events)), dtype=np.int32)
 
@@ -94,14 +95,15 @@ def get_events_program(events: np.ndarray) -> np.ndarray:
     return program
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def get_pedals_from_controls_jit(channel_controls: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    # remove heading pedal off events appearing any pedal on event
+    """remove heading pedal off events appearing beofre any pedal on event"""
     active_pedal = False
     pedal_start = 0
     pedals_starts = []
     pedals_ends = []
-
+    
+    
     for k in range(len(channel_controls)):
         if channel_controls["number"][k] != 64:
             continue
@@ -116,22 +118,24 @@ def get_pedals_from_controls_jit(channel_controls: np.ndarray) -> tuple[np.ndarr
     return np.array(pedals_starts), np.array(pedals_ends)
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def _get_overlapping_notes_pairs_jit(
     start: np.ndarray, duration: np.ndarray, pitch: np.ndarray, order: np.ndarray
 ) -> np.ndarray:
     """Get the pairs of overlapping notes in the score.
 
-    the order array should be the order of the notes by pitch
-    and then by start time within each pitch.
-    i.e np.lexsort(notes["start"], notes["pitch"])
-    but lexsort is does not seem supported by numba so keeping it as an argument.
+    the order array should be the order of the notes sorted lexicographicly
+    by pitch and then by start time within each pitch.
+    i.e. np.lexsort(notes["start"], notes["pitch"])
+    but lexsort is does not seem supported by numba so we do the sorting
+    outside this function and provide the order as an additional argument.
     """
     n = len(start)
     if n == 0:
         return np.empty((0, 2), dtype=np.int64)
 
     # sort the notes by pitch and then by start time
+    # usin the the order array computed outside this function
     start = start[order]
     duration = duration[order]
     pitch = pitch[order]
@@ -175,8 +179,8 @@ def _get_overlapping_notes_pairs_jit(
     return result
 
 
-@njit(cache=True, boundscheck=False)
-def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
+def recompute_tempo_times_jit(tempo: np.ndarray, ticks_per_quarter: int) -> None:
     """Get the time of each event in ticks and seconds."""
     tick = np.uint32(0)
     time = 0.0
@@ -202,7 +206,7 @@ def recompute_tempo_times(tempo: np.ndarray, ticks_per_quarter: int) -> None:
         tempo[i]["time"] = time
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def get_beats_per_bar(time_signature: np.ndarray) -> np.ndarray:
     """Get the number of beats per bar from the time signature."""
     compound_meter = is_compound_meter(time_signature)
@@ -210,7 +214,7 @@ def get_beats_per_bar(time_signature: np.ndarray) -> np.ndarray:
     return out
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def is_compound_meter(time_signature: np.ndarray) -> np.ndarray:
     """Check if the time signature is a compound meter.
     a signature is a compound meter if all applies:
@@ -225,7 +229,7 @@ def is_compound_meter(time_signature: np.ndarray) -> np.ndarray:
     )
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def get_subdivision_per_beat(time_signature: np.ndarray) -> np.ndarray:
     """Get the subdivision per beat from the time signature."""
     compound_meter = is_compound_meter(time_signature)
@@ -233,13 +237,13 @@ def get_subdivision_per_beat(time_signature: np.ndarray) -> np.ndarray:
     return out
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def get_tick_per_subdivision(ticks_per_quarter: int, time_signature: np.ndarray) -> np.ndarray:
     """Get the tick per subdivision from the time signature."""
     return ticks_per_quarter * 4 / time_signature["denominator"]
 
 
-@njit(cache=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def get_subdivision_beat_and_bar_ticks_jit(
     ticks_per_quarter: int, last_tick: int, time_signature: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

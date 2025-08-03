@@ -43,7 +43,7 @@ class NumPyCanvas:
         self._image[:, :, 2] = color[2]
 
 
-@njit(cache=True, fastmath=True, nogil=True, boundscheck=False)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def draw_rectangle_no_edge_jit(
     image: np.ndarray, color: np.ndarray, x1: int, x2: int, y1: int, y2: int, alpha: float
 ) -> None:
@@ -53,7 +53,7 @@ def draw_rectangle_no_edge_jit(
         image[y1:y2, x1:x2] = alpha * color + (1 - alpha) * image[y1:y2, x1:x2]
 
 
-@njit(cache=True, fastmath=True, nogil=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def draw_rectangles_jit(
     image: np.ndarray,
     rectangles: np.ndarray,
@@ -250,7 +250,7 @@ class Rectangles:
         return image
 
 
-@njit(cache=True, fastmath=True, nogil=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def draw_line(image: np.ndarray, x1: int, y1: int, x2: int, y2: int, color: np.ndarray) -> None:
     """Draw a line on an image using Bresenham's algorithm."""
     dx = abs(x2 - x1)
@@ -290,7 +290,7 @@ def draw_line(image: np.ndarray, x1: int, y1: int, x2: int, y2: int, color: np.n
         image[y, x] = color
 
 
-@njit(cache=True, fastmath=True, nogil=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def draw_polyline_jit(image: np.ndarray, x: np.ndarray, y: np.ndarray, color: np.ndarray) -> None:
     """Draw a polyline on an image."""
     assert image.ndim == 3, "image must be a 3D array"

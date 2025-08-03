@@ -9,11 +9,11 @@ import numpy as np
 
 from numba_midi._score_numba import (
     _get_overlapping_notes_pairs_jit,
-    extract_notes_start_stop_numba,
-    get_events_program,
+    extract_notes_start_stop_jit,
+    get_events_program_jit,
     get_pedals_from_controls_jit,
     get_subdivision_beat_and_bar_ticks_jit,
-    recompute_tempo_times,
+    recompute_tempo_times_jit,
 )
 from numba_midi.instruments import (
     instrument_to_program,
@@ -231,7 +231,7 @@ class Tempos:
             yield Tempo(self.time[i], self.tick[i], self.quarter_notes_per_minute[i])
 
     def recompute_times(self, ticks_per_quarter: int) -> None:
-        recompute_tempo_times(self._data, ticks_per_quarter)
+        recompute_tempo_times_jit(self._data, ticks_per_quarter)
 
 
 class TickTime:
@@ -1580,7 +1580,7 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
 def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
     notes_order = np.lexsort((note_events.event_type, note_events.tick, note_events.value1, note_events.channel))
     sorted_note_events = note_events[notes_order]
-    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_numba(
+    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_jit(
         sorted_note_events._data, notes_mode_mapping[notes_mode]
     )
     if len(ordered_note_start_ids) > 0:
@@ -1699,7 +1699,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             continue
 
         # get the program for each event
-        events_programs = get_events_program(midi_track.events._data)
+        events_programs = get_events_program_jit(midi_track.events._data)
 
         events = midi_track.events
         # compute the tick and time of each event

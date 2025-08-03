@@ -95,7 +95,7 @@ class PianoRoll:
         )
 
 
-@njit(cache=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def _add_notes_to_piano_roll_jit(
     piano_roll: np.ndarray,
     pitch: np.ndarray,
@@ -193,7 +193,7 @@ def score_to_piano_roll(
     )
 
 
-@njit(cache=True)
+@njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def _piano_roll_to_score_jit(
     piano_roll: np.ndarray, time_step: float, pitch_min: int = 0, threshold: float = 0.0
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

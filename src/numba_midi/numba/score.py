@@ -1,3 +1,4 @@
+"""Numba function to handle score."""
 from numba.core.decorators import njit
 import numpy as np
 
@@ -97,13 +98,12 @@ def get_events_program_jit(events: np.ndarray) -> np.ndarray:
 
 @njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
 def get_pedals_from_controls_jit(channel_controls: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """remove heading pedal off events appearing beofre any pedal on event"""
+    """Remove heading pedal off events appearing beofre any pedal on event."""
     active_pedal = False
     pedal_start = 0
     pedals_starts = []
     pedals_ends = []
-    
-    
+
     for k in range(len(channel_controls)):
         if channel_controls["number"][k] != 64:
             continue
@@ -119,7 +119,7 @@ def get_pedals_from_controls_jit(channel_controls: np.ndarray) -> tuple[np.ndarr
 
 
 @njit(cache=True, boundscheck=False, nogil=True, fastmath=True)
-def _get_overlapping_notes_pairs_jit(
+def get_overlapping_notes_pairs_jit(
     start: np.ndarray, duration: np.ndarray, pitch: np.ndarray, order: np.ndarray
 ) -> np.ndarray:
     """Get the pairs of overlapping notes in the score.

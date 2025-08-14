@@ -5,7 +5,7 @@ from typing import Protocol, Tuple
 
 import numpy as np
 
-from numba_midi.numba_draw import Rectangles
+from numba_midi.draw import Rectangles
 from numba_midi.score import Controls, Notes, Score
 
 # 16 track colors with more distinct tones
@@ -567,8 +567,8 @@ def draw_staircase(
     staircase_y = np.repeat(y, 2)
 
     canvas.draw_polyline(
-        x=staircase_x,
-        y=staircase_y,
+        x=staircase_x.astype(np.int32),
+        y=staircase_y.astype(np.int32),
         color=color,
         thickness=thickness,
         alpha=alpha,

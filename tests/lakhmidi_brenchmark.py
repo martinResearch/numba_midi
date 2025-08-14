@@ -26,7 +26,7 @@ def decompress_tar_gz_with_progress(file_path: str, output_dir: str) -> None:
 
 
 def download_dataset() -> None:
-    folder = Path(__file__).parent / "data" / "lakh"
+    folder = Path(__file__).parent.parent / "lakh"
     folder.mkdir(parents=True, exist_ok=True)
     url = "http://hog.ee.columbia.edu/craffel/lmd/lmd_matched.tar.gz"
     print(f"Downloading Lakh MIDI Dataset from {url}...")

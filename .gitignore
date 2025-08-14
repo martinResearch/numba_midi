@@ -170,3 +170,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 /tests/data/lakh
+src/numba_midi/cython/*.c
+src/numba_midi/cython/*.html
+/lakh

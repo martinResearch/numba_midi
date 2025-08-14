@@ -7,20 +7,21 @@ from typing import Any, Generator, Iterable, Literal, Optional, overload, TYPE_C
 
 import numpy as np
 
-from numba_midi._score_numba import (
-    _get_overlapping_notes_pairs_jit,
-    extract_notes_start_stop_jit,
-    get_events_program_jit,
-    get_pedals_from_controls_jit,
-    get_subdivision_beat_and_bar_ticks_jit,
-    recompute_tempo_times_jit,
-)
 from numba_midi.instruments import (
     instrument_to_program,
     program_to_instrument,
     program_to_instrument_group,
 )
 from numba_midi.midi import Events, get_event_times, load_midi_bytes, Midi, MidiTrack, save_midi_file
+# from numba_midi.numba.score import (
+#     extract_notes_start_stop_jit,
+#     get_events_program_jit,
+#     get_overlapping_notes_pairs_jit,
+#     get_pedals_from_controls_jit,
+#     get_subdivision_beat_and_bar_ticks_jit,
+#     recompute_tempo_times_jit,
+# )
+import numba_midi.cython.score as score_acc
 from numba_midi.utils import get_tick_per_beat_array
 
 if TYPE_CHECKING:
@@ -231,7 +232,7 @@ class Tempos:
             yield Tempo(self.time[i], self.tick[i], self.quarter_notes_per_minute[i])
 
     def recompute_times(self, ticks_per_quarter: int) -> None:
-        recompute_tempo_times_jit(self._data, ticks_per_quarter)
+        score_acc.recompute_tempo_times(self._data, ticks_per_quarter)
 
 
 class TickTime:
@@ -1180,8 +1181,8 @@ class Score:
         shorten_notes: bool = True,
         antialiasing: bool = False,
     ) -> "PianoRoll":
+        
         from numba_midi.pianoroll import score_to_piano_roll
-
         return score_to_piano_roll(
             self,
             pitch_min=pitch_min,
@@ -1193,7 +1194,7 @@ class Score:
         )
 
     def get_subdivision_beat_and_bar_ticks(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return get_subdivision_beat_and_bar_ticks_jit(self.ticks_per_quarter, self.last_tick, self.time_signature._data)
+        return score_acc.get_subdivision_beat_and_bar_ticks(self.ticks_per_quarter, self.last_tick, self.time_signature._data)
 
     def get_subdivision_beat_and_bar_times(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get the beat and bar times in seconds."""
@@ -1580,7 +1581,7 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
 def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
     notes_order = np.lexsort((note_events.event_type, note_events.tick, note_events.value1, note_events.channel))
     sorted_note_events = note_events[notes_order]
-    ordered_note_start_ids, ordered_note_stop_ids = extract_notes_start_stop_jit(
+    ordered_note_start_ids, ordered_note_stop_ids = score_acc.extract_notes_start_stop(
         sorted_note_events._data, notes_mode_mapping[notes_mode]
     )
     if len(ordered_note_start_ids) > 0:
@@ -1599,7 +1600,7 @@ def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tupl
 
 def get_pedals_from_controls(channel_controls: Controls) -> Pedals:
     """Get pedal events from control changes."""
-    pedals_start, pedals_end = get_pedals_from_controls_jit(channel_controls.as_array())
+    pedals_start, pedals_end = score_acc.get_pedals_from_controls(channel_controls.as_array())
     if len(pedals_start) > 0:
         pedals = Pedals.zeros(len(pedals_start))
         pedals.time = channel_controls.time[pedals_start]
@@ -1699,7 +1700,7 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             continue
 
         # get the program for each event
-        events_programs = get_events_program_jit(midi_track.events._data)
+        events_programs = score_acc.get_events_program(midi_track.events._data)
 
         events = midi_track.events
         # compute the tick and time of each event
@@ -2252,13 +2253,13 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
 
 def get_overlapping_notes(notes: Notes) -> np.ndarray:
     order = np.lexsort((notes.start, notes.pitch))
-    overlapping_notes = _get_overlapping_notes_pairs_jit(notes.start, notes.duration, notes.pitch, order)
+    overlapping_notes = score_acc.get_overlapping_notes_pairs(notes.start, notes.duration, notes.pitch, order)
     return overlapping_notes
 
 
 def get_overlapping_notes_ticks(notes: Notes) -> np.ndarray:
-    order = np.lexsort((notes.start_tick, notes.pitch))
-    overlapping_notes = _get_overlapping_notes_pairs_jit(notes.start_tick, notes.duration_tick, notes.pitch, order)
+    order = np.lexsort((notes.start_tick, notes.pitch)).astype(np.int32)
+    overlapping_notes = score_acc.get_overlapping_notes_pairs(notes.start_tick, notes.duration_tick, notes.pitch, order)
     return overlapping_notes
 
 

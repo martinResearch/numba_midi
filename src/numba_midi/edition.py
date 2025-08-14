@@ -4,7 +4,8 @@ from typing import Iterable, Optional
 
 import numpy as np
 
-from numba_midi.numba_2dengine import rectangles_segment_intersections
+#from numba_midi.numba.engine2d import rectangles_segment_intersections
+from numba_midi.cython.engine2d import rectangles_segment_intersections
 from numba_midi.score import Notes, Score
 
 

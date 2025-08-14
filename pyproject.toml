@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61", "wheel", "cython>=3.0", "numpy>=1.24"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
@@ -16,7 +16,7 @@ name = "numba_midi"
 version = "0.1.30"
 description = "numba-accelerated python midi score processing library."
 authors = [{ name = "Martin de La Gorce" }]
-dependencies = ["numba>=0.61","numpy"]
+dependencies = ["numpy>=1.24"]
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -44,6 +44,14 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/martinResearch/numba_midi"
 
+[dependency-groups]
+dev = [
+    "cython>=3.1.2",
+]
+
 [tool.setuptools.package-data]
 "numba_midi" = ["py.typed"]
+
+[tool.cython-lint]
+max-line-length = 120
 

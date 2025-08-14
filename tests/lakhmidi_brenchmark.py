@@ -71,6 +71,7 @@ def benchmark_method(
     num_max_files: int,
     num_iter: int,
     input_bytes: bool,
+    debug:bool=True
 ) -> None:
     # get the list of midi files
     folder = Path(__file__).parent / "data" / "lakh" / "benchmarks"
@@ -122,7 +123,10 @@ def benchmark_method(
                     "megabyte_per_second": filesize_mb / min_duration,
                 }
             )
-        except Exception:
+        except Exception as e:
+            if debug:
+                # rethrow the error for debugging
+                raise e
             failures.append(midi_file)
 
     df = pd.DataFrame(rows)
@@ -139,9 +143,9 @@ def benchmark_method(
 def benchmark() -> None:
     num_max_files = 1000
     num_iter = 10
-    benchmark_method(
-        "pretty_midi", pretty_midi.PrettyMIDI, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
-    )
+    # benchmark_method(
+    #     "pretty_midi", pretty_midi.PrettyMIDI, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
+    # )
     benchmark_method(
         "numba_midi_files", numba_midi.load_score, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
     )

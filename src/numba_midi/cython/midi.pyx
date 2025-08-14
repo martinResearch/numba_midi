@@ -10,9 +10,9 @@ This replaces the numba-accelerated functions in midi.py for better distribution
 """
 
 import numpy as np
+import cython
 cimport numpy as cnp
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, int32_t, int16_t
-cimport cython
 
 # Initialize numpy
 cnp.import_array()
@@ -24,8 +24,8 @@ event_dtype = np.dtype([
     ("channel", np.uint8),
     ("value1", np.int32),
     ("value2", np.int16),
-    ("value3", np.int8),
-    ("value4", np.int8),
+    ("value3", np.uint8),
+    ("value4", np.uint8),
 ])
 
 
@@ -37,50 +37,42 @@ cpdef cnp.ndarray get_event_times(
     int ticks_per_quarter
 ):
     """Get the time of each event in ticks and seconds."""
-    cdef int i
+    cdef Py_ssize_t i
     cdef uint32_t tick = 0
     cdef double time = 0.0
     cdef double quarter_notes_per_minute_init = 120.0
     cdef double second_per_tick = quarter_notes_per_minute_init / ticks_per_quarter / 60.0
-    cdef int num_events = len(midi_events)
-    cdef int num_tempo_events = len(tempo_events)
-    
+    cdef Py_ssize_t num_events = midi_events.shape[0]
+    cdef Py_ssize_t num_tempo_events = tempo_events.shape[0]
     cdef cnp.ndarray[cnp.float32_t, ndim=1] events_times = np.zeros(num_events, dtype=np.float32)
-    
+    cdef cnp.float32_t[:] events_times_mv = events_times
     cdef int ref_tick = 0
     cdef double ref_time = 0.0
     cdef int last_tempo_event = -1
     cdef uint32_t delta_tick
     cdef double microseconds_per_quarter_note
-    
     for i in range(num_events):
-        # Access tick field from structured array
-        delta_tick = midi_events[i]['tick'] - tick
+        delta_tick = <uint32_t>(midi_events[i]['tick']) - tick
         tick += delta_tick
-        
-        # Check for tempo changes
         while (last_tempo_event + 1 < num_tempo_events and 
-               tick >= tempo_events[last_tempo_event + 1]['tick']):
+               tick >= <uint32_t>(tempo_events[last_tempo_event + 1]['tick'])):
             last_tempo_event += 1
-            ref_time = ref_time + (tempo_events[last_tempo_event]['tick'] - ref_tick) * second_per_tick
-            ref_tick = tempo_events[last_tempo_event]['tick']
-            microseconds_per_quarter_note = <double>tempo_events[last_tempo_event]['value1']
+            ref_time = ref_time + (<uint32_t>(tempo_events[last_tempo_event]['tick']) - ref_tick) * second_per_tick
+            ref_tick = <uint32_t>(tempo_events[last_tempo_event]['tick'])
+            microseconds_per_quarter_note = <double>(tempo_events[last_tempo_event]['value1'])
             second_per_tick = microseconds_per_quarter_note / ticks_per_quarter / 1_000_000
-        
         time = ref_time + (tick - ref_tick) * second_per_tick
-        events_times[i] = <cnp.float32_t>time
-    
+        events_times_mv[i] = <cnp.float32_t>time
     return events_times
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef tuple read_var_length(bytes data_bytes, int offset):
+cdef inline tuple read_var_length(bytes data_bytes, int offset):
     """Reads a variable-length quantity from the MIDI file."""
     cdef const uint8_t[::1] data = data_bytes
     cdef int value = 0
     cdef uint8_t byte
-    
     while True:
         byte = data[offset]
         value = (value << 7) | (byte & 0x7F)
@@ -92,7 +84,7 @@ cpdef tuple read_var_length(bytes data_bytes, int offset):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef uint32_t unpack_uint32(bytes data_bytes):
+cdef inline uint32_t unpack_uint32(bytes data_bytes):
     """Unpacks a 4-byte unsigned integer (big-endian)."""
     cdef const uint8_t[::1] data = data_bytes
     return ((<uint32_t>data[0]) << 24) | ((<uint32_t>data[1]) << 16) | ((<uint32_t>data[2]) << 8) | (<uint32_t>data[3])
@@ -100,7 +92,7 @@ cpdef uint32_t unpack_uint32(bytes data_bytes):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef tuple unpack_uint8_pair(bytes data_bytes):
+cdef inline tuple unpack_uint8_pair(bytes data_bytes):
     """Unpacks two 1-byte unsigned integers."""
     cdef const uint8_t[::1] data = data_bytes
     return data[0], data[1]
@@ -108,7 +100,7 @@ cpdef tuple unpack_uint8_pair(bytes data_bytes):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef tuple unpack_uint16_triplet(bytes data_bytes):
+cdef inline tuple unpack_uint16_triplet(bytes data_bytes):
     """Unpacks three 2-byte unsigned integers (big-endian)."""
     cdef const uint8_t[::1] data = data_bytes
     cdef uint16_t val1 = ((<uint16_t>data[0]) << 8) | (<uint16_t>data[1])
@@ -119,7 +111,7 @@ cpdef tuple unpack_uint16_triplet(bytes data_bytes):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef int32_t decode_pitch_bend(bytes data_bytes):
+cdef inline int32_t decode_pitch_bend(bytes data_bytes):
     """Decode pitch bend from two bytes."""
     cdef const uint8_t[::1] data = data_bytes
     cdef uint8_t byte1 = data[0]
@@ -132,7 +124,7 @@ cpdef int32_t decode_pitch_bend(bytes data_bytes):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef tuple encode_pitchbend(int value):
+cdef inline tuple encode_pitchbend(int value):
     """Encodes a pitch bend value to two bytes."""
     assert -8192 <= value <= 8191, "Pitch bend value out of range"
     cdef uint16_t unsigned = <uint16_t>(value + 8192)
@@ -143,21 +135,18 @@ cpdef tuple encode_pitchbend(int value):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef list encode_delta_time_cython(int delta_time):
+cdef inline list encode_delta_time_cython(int delta_time):
     """Encodes delta time as a variable-length quantity."""
     if delta_time == 0:
         return [0]
-    
     cdef list result = []
     cdef uint8_t byte
-    
     while delta_time > 0:
         byte = <uint8_t>(delta_time & 0x7F)
         delta_time >>= 7
         if len(result) > 0:
             byte |= 0x80
         result.insert(0, byte)
-    
     return result
 
 

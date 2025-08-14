@@ -17,8 +17,8 @@ event_dtype = np.dtype(
         ("channel", np.uint8),  # MIDI Channel (0-15)
         ("value1", np.int32),  # Event-dependent value
         ("value2", np.int16),  # Event-dependent value
-        ("value3", np.int8),  # Event-dependent value
-        ("value4", np.int8),  # Event-dependent value
+        ("value3", np.uint8),  # Event-dependent value
+        ("value4", np.uint8),  # Event-dependent value
     ]
 )
 @dataclass
@@ -252,6 +252,12 @@ def text_decode(data: bytes) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return data.decode("latin-1")
+    
+def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
+    """Unpacks three 2-byte unsigned integers (big-endian)."""
+    return (data[0] << 8) | data[1], (data[2] << 8) | data[3], (data[4] << 8) | data[5]
+
+
 
 
 def load_midi_bytes(data: bytes) -> Midi:
@@ -260,7 +266,7 @@ def load_midi_bytes(data: bytes) -> Midi:
     if data[:4] != b"MThd":
         raise ValueError("Invalid MIDI file header")
 
-    format_type, num_tracks, ticks_per_quarter = midi_acc.unpack_uint16_triplet(data[8:14])
+    format_type, num_tracks, ticks_per_quarter = unpack_uint16_triplet(data[8:14])
     # assert format_type == 0, "format_type=0 only supported"
     offset = 14  # Header size is fixed at 14 bytes
 

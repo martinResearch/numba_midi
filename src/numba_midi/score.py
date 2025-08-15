@@ -1582,7 +1582,7 @@ def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tupl
     notes_order = np.lexsort((note_events.event_type, note_events.tick, note_events.value1, note_events.channel))
     sorted_note_events = note_events[notes_order]
     ordered_note_start_ids, ordered_note_stop_ids = score_acc.extract_notes_start_stop(
-        sorted_note_events._data, notes_mode_mapping[notes_mode]
+        sorted_note_events.as_array(), notes_mode_mapping[notes_mode]
     )
     if len(ordered_note_start_ids) > 0:
         note_start_ids = notes_order[ordered_note_start_ids]
@@ -1700,12 +1700,12 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             continue
 
         # get the program for each event
-        events_programs = score_acc.get_events_program(midi_track.events._data)
+        events_programs = score_acc.get_events_program(midi_track.events.as_array())
 
         events = midi_track.events
         # compute the tick and time of each event
         events_ticks = events.tick
-        events_times = get_event_times(events._data, tempo_events._data, midi_score.ticks_per_quarter)
+        events_times = get_event_times(events.as_array(), tempo_events.as_array(), midi_score.ticks_per_quarter)
 
         duration_tick = max(duration_tick, events.tick.max())
 

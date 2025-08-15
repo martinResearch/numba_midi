@@ -51,82 +51,120 @@ class EventType(IntEnum):
 
 
 class Events:
-    """Wrapper for a structured numpy array with event_dtype elements."""
+    """Struct of arrays representation for MIDI events - better performance than array of structs."""
 
-    def __init__(self, data: np.ndarray) -> None:
-        if data.dtype != event_dtype:
-            raise ValueError("Invalid dtype for Controls")
-        self._data = data
+    def __init__(self, 
+                 tick: np.ndarray,
+                 event_type: np.ndarray,
+                 channel: np.ndarray,
+                 value1: np.ndarray,
+                 value2: np.ndarray,
+                 value3: np.ndarray,
+                 value4: np.ndarray
+        ) -> None:
+        """Initialize Events from either individual arrays."""
+
+
+        # Ensure all arrays have the same length
+        arrays = [tick, event_type, channel, value1, value2, value3, value4]
+        sizes = [len(arr) for arr in arrays]
+        if not all(s == sizes[0] for s in sizes):
+            raise ValueError("All arrays must have the same length")
+        
+        self._size = sizes[0]
+        self._tick = np.asarray(tick, dtype=np.uint32)
+        self._event_type = np.asarray(event_type, dtype=np.uint8)
+        self._channel = np.asarray(channel, dtype=np.uint8)
+        self._value1 = np.asarray(value1, dtype=np.int32)
+        self._value2 = np.asarray(value2, dtype=np.int16)
+        self._value3 = np.asarray(value3, dtype=np.uint8)
+        self._value4 = np.asarray(value4, dtype=np.uint8)
 
     @classmethod
     def zeros(cls, size: int) -> "Events":
         """Create a new Events with zeros."""
-        data = np.zeros(size, dtype=event_dtype)
-        return cls(data)
+        return cls(
+            tick=np.zeros(size, dtype=np.uint32),
+            event_type=np.zeros(size, dtype=np.uint8),
+            channel=np.zeros(size, dtype=np.uint8),
+            value1=np.zeros(size, dtype=np.int32),
+            value2=np.zeros(size, dtype=np.int16),
+            value3=np.zeros(size, dtype=np.uint8),
+            value4=np.zeros(size, dtype=np.uint8),
+        )
 
     @classmethod
     def concatenate(cls, arrays: Iterable["Events"]) -> "Events":
-        """Concatenate multiple Eventss."""
+        """Concatenate multiple Events."""
         if not arrays:
-            raise ValueError("No Eventss to concatenate")
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls(data)
+            raise ValueError("No Events to concatenate")
+        
+        arrays_list = list(arrays)
+        return cls(
+            tick=np.concatenate([arr._tick for arr in arrays_list]),
+            event_type=np.concatenate([arr._event_type for arr in arrays_list]),
+            channel=np.concatenate([arr._channel for arr in arrays_list]),
+            value1=np.concatenate([arr._value1 for arr in arrays_list]),
+            value2=np.concatenate([arr._value2 for arr in arrays_list]),
+            value3=np.concatenate([arr._value3 for arr in arrays_list]),
+            value4=np.concatenate([arr._value4 for arr in arrays_list]),
+        )
 
     @property
     def tick(self) -> np.ndarray:
-        return self._data["tick"]
+        return self._tick
 
     @tick.setter
     def tick(self, value: np.ndarray | int) -> None:
-        self._data["tick"][:] = value
+        self._tick[:] = value
 
     @property
     def event_type(self) -> np.ndarray:
-        return self._data["event_type"]
+        return self._event_type
 
     @event_type.setter
     def event_type(self, value: np.ndarray | int) -> None:
-        self._data["event_type"][:] = value
+        self._event_type[:] = value
 
     @property
     def channel(self) -> np.ndarray:
-        return self._data["channel"]
+        return self._channel
 
     @channel.setter
     def channel(self, value: np.ndarray | int) -> None:
-        self._data["channel"][:] = value
+        self._channel[:] = value
 
     @property
     def value1(self) -> np.ndarray:
-        return self._data["value1"]
+        return self._value1
 
     @value1.setter
     def value1(self, value: np.ndarray | int) -> None:
-        self._data["value1"][:] = value
+        self._value1[:] = value
 
     @property
     def value2(self) -> np.ndarray:
-        return self._data["value2"]
+        return self._value2
 
     @value2.setter
     def value2(self, value: np.ndarray | int) -> None:
-        self._data["value2"][:] = value
+        self._value2[:] = value
 
     @property
     def value3(self) -> np.ndarray:
-        return self._data["value3"]
+        return self._value3
 
     @value3.setter
     def value3(self, value: np.ndarray | int) -> None:
-        self._data["value3"][:] = value
+        self._value3[:] = value
 
     @property
     def value4(self) -> np.ndarray:
-        return self._data["value4"]
+        return self._value4
 
     @value4.setter
     def value4(self, value: np.ndarray | int) -> None:
-        self._data["value4"][:] = value
+        self._value4[:] = value
 
     @overload
     def __getitem__(self, index: int) -> Event:
@@ -143,47 +181,82 @@ class Events:
     def __getitem__(self, index: int | slice | np.ndarray) -> "Events | Event":
         """Get item(s) from the Events."""
         if isinstance(index, int):
-            if index < 0 or index >= len(self._data):
+            if index < 0 or index >= self._size:
                 raise IndexError("Index out of bounds")
             return Event(
-                tick=self._data["tick"][index],
-                event_type=self._data["event_type"][index],
-                channel=self._data["channel"][index],
-                value1=self._data["value1"][index],
-                value2=self._data["value2"][index],
-                value3=self._data["value3"][index],
-                value4=self._data["value4"][index],
+                tick=int(self._tick[index]),
+                event_type=int(self._event_type[index]),
+                channel=int(self._channel[index]),
+                value1=int(self._value1[index]),
+                value2=int(self._value2[index]),
+                value3=int(self._value3[index]),
+                value4=int(self._value4[index]),
             )
-        result = self._data[index]
-        return Events(result)  # Return new wrapper for slices or boolean arrays
+        # For slices or boolean arrays, return new Events with sliced arrays
+        return Events(
+            tick=self._tick[index],
+            event_type=self._event_type[index],
+            channel=self._channel[index],
+            value1=self._value1[index],
+            value2=self._value2[index],
+            value3=self._value3[index],
+            value4=self._value4[index],
+        )
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "Events") -> None:
-        self._data[index] = value._data
+        self._tick[index] = value._tick
+        self._event_type[index] = value._event_type
+        self._channel[index] = value._channel
+        self._value1[index] = value._value1
+        self._value2[index] = value._value2
+        self._value3[index] = value._value3
+        self._value4[index] = value._value4
 
     def __len__(self) -> int:
-        return len(self._data)
+        return self._size
 
     def as_array(self) -> np.ndarray:
-        return self._data
+        """Convert struct of arrays back to array of structs for compatibility."""
+        result = np.zeros(self._size, dtype=event_dtype)
+        result["tick"] = self._tick
+        result["event_type"] = self._event_type
+        result["channel"] = self._channel
+        result["value1"] = self._value1
+        result["value2"] = self._value2
+        result["value3"] = self._value3
+        result["value4"] = self._value4
+        return result
+    
+    @classmethod
+    def from_array(cls, data: np.ndarray) -> "Events":
+        return cls(
+            tick=data["tick"],
+            event_type=data["event_type"],
+            channel=data["channel"],
+            value1=data["value1"],
+            value2=data["value2"],
+            value3=data["value3"],
+            value4=data["value4"],
+        )
 
     @property
     def size(self) -> int:
-        return self._data.size
+        return self._size
 
     def __repr__(self) -> str:
         return f"Events(size={self.size})"
 
     def __iter__(self) -> Iterator[Event]:
         """Iterate over the events."""
-        for event in self._data:
+        for i in range(self._size):
             yield Event(
-                tick=event["tick"],
-                event_type=event["event_type"],
-                channel=event["channel"],
-                value1=event["value1"],
-                value2=event["value2"],
-                value3=event["value3"],
-                value4=event["value4"],
+                tick=int(self._tick[i]),
+                event_type=int(self._event_type[i]),
+                channel=int(self._channel[i]),
+                value1=int(self._value1[i]),
+                value2=int(self._value2[i]),
+                value3=int(self._value3[i]),
+                value4=int(self._value4[i]),
             )
 
 
@@ -280,15 +353,27 @@ def load_midi_bytes(data: bytes) -> Midi:
             raise ValueError("Invalid track chunk")
         (
             offset,
-            midi_events_np,
+            midi_events_arrays,
             track_name,
             lyrics,
-        ) = midi_acc.parse_midi_track(data, offset)
+        ) = midi_acc.parse_midi_track_soa_fast(data, offset)
 
         tracks_names.append(text_decode(track_name))
         lyrics = [(tick, text_decode(lyric)) for tick, lyric in lyrics] if lyrics else None
         tracks_lyrics.append(lyrics)
-        tracks_events.append(Events(midi_events_np))
+        
+        # Create Events directly from the struct of arrays
+        tick_array, event_type_array, channel_array, value1_array, value2_array, value3_array, value4_array = midi_events_arrays
+        events = Events(
+            tick=tick_array,
+            event_type=event_type_array,
+            channel=channel_array,
+            value1=value1_array,
+            value2=value2_array,
+            value3=value3_array,
+            value4=value4_array,
+        )
+        tracks_events.append(events)
 
     # modify the tracks to have the same time signature
     for name, lyrics, events in zip(tracks_names, tracks_lyrics, tracks_events, strict=False):
@@ -314,10 +399,29 @@ def sort_midi_events(midi_events: Events) -> Events:
 
 
 def _encode_midi_track(track: MidiTrack) -> bytes:
+    """Encode MIDI track using struct of arrays for better performance."""
+    data = midi_acc.encode_midi_track_soa_fast(
+        track.name.encode("utf-8"),  # Pre-encode the name to bytes
+        track.events.tick,
+        track.events.event_type,
+        track.events.channel,
+        track.events.value1,
+        track.events.value2,
+        track.events.value3,
+        track.events.value4,
+    )
+    return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
+
+
+def _encode_midi_track_legacy(track: MidiTrack) -> bytes:
+    """Legacy encode function using structured arrays for compatibility."""
     data = midi_acc.encode_midi_track(
         track.name.encode("utf-8"),  # Pre-encode the name to bytes
-        track.events._data,
+        track.events.as_array(),
     )
+    return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
+
+
     return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
 
 
@@ -350,9 +454,18 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
         sorted_events1 = sort_midi_events(track1.events)
         sorted_events2 = sort_midi_events(track2.events)
         assert track1.name == track2.name
-        assert np.all(sorted_events1._data == sorted_events2._data)
+        assert np.all(sorted_events1.as_array() == sorted_events2.as_array())
 
 
 
 def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
     return midi_acc.get_event_times(midi_events, tempo_events, ticks_per_quarter)
+
+
+def get_event_times_soa(events: Events, tempo_events: Events, ticks_per_quarter: int) -> np.ndarray:
+    """Get event times using struct of arrays for better performance."""
+    return midi_acc.get_event_times_soa_fast(
+        events.tick, events.event_type,
+        tempo_events.tick, tempo_events.value1,
+        ticks_per_quarter
+    )

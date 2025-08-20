@@ -6,13 +6,12 @@ from typing import Iterable, Iterator, overload
 
 import numpy as np
 
-#from numba_midi.numba.midi import encode_midi_track_numba, event_dtype, parse_midi_track, unpack_uint16_triplet, get_event_times_jit
-import numba_midi.cython.midi as midi_acc 
+import numba_midi.cython.midi as midi_acc
 
 # Define structured dtype to have a homogenous representation of MIDI events
 event_dtype = np.dtype(
     [
-        ("tick", np.uint32),  # Tick count
+        ("tick", np.int32),  # Tick count
         ("event_type", np.uint8),  # Event type (0-6)
         ("channel", np.uint8),  # MIDI Channel (0-15)
         ("value1", np.int32),  # Event-dependent value
@@ -21,6 +20,8 @@ event_dtype = np.dtype(
         ("value4", np.uint8),  # Event-dependent value
     ]
 )
+
+
 @dataclass
 class Event:
     """MIDI event representation."""
@@ -53,26 +54,25 @@ class EventType(IntEnum):
 class Events:
     """Struct of arrays representation for MIDI events - better performance than array of structs."""
 
-    def __init__(self, 
-                 tick: np.ndarray,
-                 event_type: np.ndarray,
-                 channel: np.ndarray,
-                 value1: np.ndarray,
-                 value2: np.ndarray,
-                 value3: np.ndarray,
-                 value4: np.ndarray
-        ) -> None:
+    def __init__(
+        self,
+        tick: np.ndarray,
+        event_type: np.ndarray,
+        channel: np.ndarray,
+        value1: np.ndarray,
+        value2: np.ndarray,
+        value3: np.ndarray,
+        value4: np.ndarray,
+    ) -> None:
         """Initialize Events from either individual arrays."""
-
-
         # Ensure all arrays have the same length
         arrays = [tick, event_type, channel, value1, value2, value3, value4]
         sizes = [len(arr) for arr in arrays]
         if not all(s == sizes[0] for s in sizes):
             raise ValueError("All arrays must have the same length")
-        
+
         self._size = sizes[0]
-        self._tick = np.asarray(tick, dtype=np.uint32)
+        self._tick = np.asarray(tick, dtype=np.int32)
         self._event_type = np.asarray(event_type, dtype=np.uint8)
         self._channel = np.asarray(channel, dtype=np.uint8)
         self._value1 = np.asarray(value1, dtype=np.int32)
@@ -84,7 +84,7 @@ class Events:
     def zeros(cls, size: int) -> "Events":
         """Create a new Events with zeros."""
         return cls(
-            tick=np.zeros(size, dtype=np.uint32),
+            tick=np.zeros(size, dtype=np.int32),
             event_type=np.zeros(size, dtype=np.uint8),
             channel=np.zeros(size, dtype=np.uint8),
             value1=np.zeros(size, dtype=np.int32),
@@ -98,7 +98,7 @@ class Events:
         """Concatenate multiple Events."""
         if not arrays:
             raise ValueError("No Events to concatenate")
-        
+
         arrays_list = list(arrays)
         return cls(
             tick=np.concatenate([arr._tick for arr in arrays_list]),
@@ -226,7 +226,7 @@ class Events:
         result["value3"] = self._value3
         result["value4"] = self._value4
         return result
-    
+
     @classmethod
     def from_array(cls, data: np.ndarray) -> "Events":
         return cls(
@@ -325,12 +325,11 @@ def text_decode(data: bytes) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return data.decode("latin-1")
-    
+
+
 def unpack_uint16_triplet(data: bytes) -> tuple[int, int, int]:
     """Unpacks three 2-byte unsigned integers (big-endian)."""
     return (data[0] << 8) | data[1], (data[2] << 8) | data[3], (data[4] << 8) | data[5]
-
-
 
 
 def load_midi_bytes(data: bytes) -> Midi:
@@ -361,9 +360,11 @@ def load_midi_bytes(data: bytes) -> Midi:
         tracks_names.append(text_decode(track_name))
         lyrics = [(tick, text_decode(lyric)) for tick, lyric in lyrics] if lyrics else None
         tracks_lyrics.append(lyrics)
-        
+
         # Create Events directly from the struct of arrays
-        tick_array, event_type_array, channel_array, value1_array, value2_array, value3_array, value4_array = midi_events_arrays
+        tick_array, event_type_array, channel_array, value1_array, value2_array, value3_array, value4_array = (
+            midi_events_arrays
+        )
         events = Events(
             tick=tick_array,
             event_type=event_type_array,
@@ -421,7 +422,6 @@ def _encode_midi_track_legacy(track: MidiTrack) -> bytes:
     )
     return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
 
-
     return b"MTrk" + len(data).to_bytes(4, "big") + data.tobytes()
 
 
@@ -457,7 +457,6 @@ def assert_midi_equal(midi1: Midi, midi2: Midi) -> None:
         assert np.all(sorted_events1.as_array() == sorted_events2.as_array())
 
 
-
 def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per_quarter: int) -> np.ndarray:
     return midi_acc.get_event_times(midi_events, tempo_events, ticks_per_quarter)
 
@@ -465,7 +464,5 @@ def get_event_times(midi_events: np.ndarray, tempo_events: np.ndarray, ticks_per
 def get_event_times_soa(events: Events, tempo_events: Events, ticks_per_quarter: int) -> np.ndarray:
     """Get event times using struct of arrays for better performance."""
     return midi_acc.get_event_times_soa_fast(
-        events.tick, events.event_type,
-        tempo_events.tick, tempo_events.value1,
-        ticks_per_quarter
+        events.tick, events.event_type, tempo_events.tick, tempo_events.value1, ticks_per_quarter
     )

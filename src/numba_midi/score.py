@@ -7,12 +7,6 @@ from typing import Any, Generator, Iterable, Literal, Optional, overload, TYPE_C
 
 import numpy as np
 
-from numba_midi.instruments import (
-    instrument_to_program,
-    program_to_instrument,
-    program_to_instrument_group,
-)
-from numba_midi.midi import Events, get_event_times, load_midi_bytes, Midi, MidiTrack, save_midi_file
 # from numba_midi.numba.score import (
 #     extract_notes_start_stop_jit,
 #     get_events_program_jit,
@@ -22,6 +16,12 @@ from numba_midi.midi import Events, get_event_times, load_midi_bytes, Midi, Midi
 #     recompute_tempo_times_jit,
 # )
 import numba_midi.cython.score as score_acc
+from numba_midi.instruments import (
+    instrument_to_program,
+    program_to_instrument,
+    program_to_instrument_group,
+)
+from numba_midi.midi import Events, get_event_times_soa, load_midi_bytes, Midi, MidiTrack, save_midi_file
 from numba_midi.utils import get_tick_per_beat_array
 
 if TYPE_CHECKING:
@@ -83,7 +83,7 @@ class Tempo:
 
 
 class Tempos:
-    """Wrapper for a structured numpy array with tempo_dtype elements."""
+    """Struct of Arrays wrapper for tempo data elements."""
 
     @overload
     def __init__(
@@ -146,57 +146,71 @@ class Tempos:
                 time=time, quarter_notes_per_minute=quarter_notes_per_minute, ticks_per_quarter=ticks_per_quarter
             )
 
-        data = np.empty(len(time), dtype=tempo_dtype)
-        # compute ticks from quarter_notes_per_minute and time
-        data["tick"] = tick
-        data["time"] = time
-        data["quarter_notes_per_minute"] = quarter_notes_per_minute
-        self._data = data
+        # Store as separate arrays (SoA)
+        self._time = np.array(time, dtype=np.float64)
+        self._tick = np.array(tick, dtype=np.int32)
+        self._quarter_notes_per_minute = np.array(quarter_notes_per_minute, dtype=np.float64)
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> "Tempos":
         if data.dtype != tempo_dtype:
-            raise ValueError("Invalid dtype for Controls")
+            raise ValueError("Invalid dtype for Tempos")
         if data.ndim != 1:
-            raise ValueError("Controls must be 1D")
+            raise ValueError("Tempos must be 1D")
         instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
+        # Convert from AoS to SoA
+        instance._time = data["time"].copy()
+        instance._tick = data["tick"].copy()
+        instance._quarter_notes_per_minute = data["quarter_notes_per_minute"].copy()
         return instance
 
     @classmethod
     def zeros(cls, size: int) -> "Tempos":
         """Initialize the Tempos with zeros."""
-        return Tempos.from_array(np.zeros(size, dtype=tempo_dtype))
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._time = np.zeros(size, dtype=np.float64)
+        instance._tick = np.zeros(size, dtype=np.int32)
+        instance._quarter_notes_per_minute = np.zeros(size, dtype=np.float64)
+        return instance
 
     @classmethod
     def concatenate(cls, arrays: Iterable["Tempos"]) -> "Tempos":
-        """Concatenate multiple Temposs."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
+        """Concatenate multiple Tempos."""
+        if not arrays:
+            return cls.zeros(0)
+        arrays_list = list(arrays)
+        if len(arrays_list) == 1:
+            return arrays_list[0]
+
+        instance = cls.__new__(cls)
+        instance._time = np.concatenate([arr._time for arr in arrays_list])
+        instance._tick = np.concatenate([arr._tick for arr in arrays_list])
+        instance._quarter_notes_per_minute = np.concatenate([arr._quarter_notes_per_minute for arr in arrays_list])
+        return instance
 
     @property
     def time(self) -> np.ndarray:
-        return self._data["time"]
+        return self._time
 
     @time.setter
     def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
+        self._time[:] = value
 
     @property
     def tick(self) -> np.ndarray:
-        return self._data["tick"]
+        return self._tick
 
     @tick.setter
     def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
+        self._tick[:] = value
 
     @property
     def quarter_notes_per_minute(self) -> np.ndarray:
-        return self._data["quarter_notes_per_minute"]
+        return self._quarter_notes_per_minute
 
     @quarter_notes_per_minute.setter
     def quarter_notes_per_minute(self, value: np.ndarray) -> None:
-        self._data["quarter_notes_per_minute"][:] = value
+        self._quarter_notes_per_minute[:] = value
 
     @overload
     def __getitem__(self, index: int) -> Tempo: ...
@@ -205,34 +219,44 @@ class Tempos:
 
     def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Tempos|Tempo":
         if isinstance(index, int):
-            result = self._data[index]
             return Tempo(
-                float(result["time"]),
-                int(result["tick"]),
-                float(result["quarter_notes_per_minute"]),
+                float(self._time[index]),
+                int(self._tick[index]),
+                float(self._quarter_notes_per_minute[index]),
             )
-        result = self._data[index]
-        return Tempos.from_array(result)  # Return new wrapper for slices or boolean arrays
+        instance = self.__class__.__new__(self.__class__)
+        instance._time = self._time[index]
+        instance._tick = self._tick[index]
+        instance._quarter_notes_per_minute = self._quarter_notes_per_minute[index]
+        return instance
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "Tempos") -> None:
-        self._data[index] = value._data
+        self._time[index] = value._time
+        self._tick[index] = value._tick
+        self._quarter_notes_per_minute[index] = value._quarter_notes_per_minute
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._time)
 
     def as_array(self) -> np.ndarray:
-        return self._data
+        """Convert SoA back to structured array for compatibility."""
+        data = np.empty(len(self), dtype=tempo_dtype)
+        data["time"] = self._time
+        data["tick"] = self._tick
+        data["quarter_notes_per_minute"] = self._quarter_notes_per_minute
+        return data
 
     @property
     def size(self) -> int:
-        return self._data.size
+        return self._time.size
 
     def __iter__(self) -> Generator[Tempo, None, None]:
-        for i in range(len(self._data)):
-            yield Tempo(self.time[i], self.tick[i], self.quarter_notes_per_minute[i])
+        for i in range(len(self)):
+            yield Tempo(self._time[i], self._tick[i], self._quarter_notes_per_minute[i])
 
     def recompute_times(self, ticks_per_quarter: int) -> None:
-        score_acc.recompute_tempo_times(self._data, ticks_per_quarter)
+        # Use SoA Cython function for better performance
+        score_acc.recompute_tempo_times_soa(self._time, self._tick, self._quarter_notes_per_minute, ticks_per_quarter)
 
 
 class TickTime:
@@ -332,7 +356,7 @@ class Signature:
 
 
 class Signatures:
-    """Wrapper for a structured numpy array with signature_dtype elements."""
+    """Struct of Arrays wrapper for signature data elements."""
 
     def __init__(
         self,
@@ -350,19 +374,19 @@ class Signatures:
             clocks_per_click = np.array(clocks_per_click, dtype=np.int32)
         if isinstance(notated_32nd_notes_per_beat, list):
             notated_32nd_notes_per_beat = np.array(notated_32nd_notes_per_beat, dtype=np.int32)
-        data = np.empty(len(numerator), dtype=signature_dtype)
+
         if clocks_per_click is None:
             clocks_per_click = np.full(len(numerator), 24, dtype=np.uint8)
         if notated_32nd_notes_per_beat is None:
             notated_32nd_notes_per_beat = np.full(len(numerator), 8, dtype=np.uint8)
 
-        data["time"] = ticktime.time
-        data["tick"] = ticktime.tick
-        data["numerator"] = numerator
-        data["denominator"] = denominator
-        data["clocks_per_click"] = clocks_per_click
-        data["notated_32nd_notes_per_beat"] = notated_32nd_notes_per_beat
-        self._data = data
+        # Store as separate arrays (SoA)
+        self._time = np.array(ticktime.time, dtype=np.float64)
+        self._tick = np.array(ticktime.tick, dtype=np.int32)
+        self._numerator = np.array(numerator, dtype=np.int32)
+        self._denominator = np.array(denominator, dtype=np.int32)
+        self._clocks_per_click = np.array(clocks_per_click, dtype=np.uint8)
+        self._notated_32nd_notes_per_beat = np.array(notated_32nd_notes_per_beat, dtype=np.uint8)
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> "Signatures":
@@ -371,58 +395,85 @@ class Signatures:
         if data.ndim != 1:
             raise ValueError("Signatures must be 1D")
         instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
+        # Convert from AoS to SoA
+        instance._time = data["time"].copy()
+        instance._tick = data["tick"].copy()
+        instance._numerator = data["numerator"].copy()
+        instance._denominator = data["denominator"].copy()
+        instance._clocks_per_click = data["clocks_per_click"].copy()
+        instance._notated_32nd_notes_per_beat = data["notated_32nd_notes_per_beat"].copy()
         return instance
 
     @classmethod
     def zeros(cls, size: int) -> "Signatures":
         """Initialize the Signatures with zeros."""
-        return Signatures.from_array(np.zeros(size, dtype=signature_dtype))
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._time = np.zeros(size, dtype=np.float64)
+        instance._tick = np.zeros(size, dtype=np.int32)
+        instance._numerator = np.zeros(size, dtype=np.int32)
+        instance._denominator = np.zeros(size, dtype=np.int32)
+        instance._clocks_per_click = np.zeros(size, dtype=np.uint8)
+        instance._notated_32nd_notes_per_beat = np.zeros(size, dtype=np.uint8)
+        return instance
 
     @property
     def time(self) -> np.ndarray:
-        return self._data["time"]
+        return self._time
 
     @time.setter
     def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
+        self._time[:] = value
 
     @property
     def tick(self) -> np.ndarray:
-        return self._data["tick"]
+        return self._tick
 
     @tick.setter
     def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
+        self._tick[:] = value
 
     @property
     def numerator(self) -> np.ndarray:
-        return self._data["numerator"]
+        return self._numerator
 
     @numerator.setter
     def numerator(self, value: np.ndarray) -> None:
-        self._data["numerator"][:] = value
+        self._numerator[:] = value
 
     @property
     def denominator(self) -> np.ndarray:
-        return self._data["denominator"]
+        return self._denominator
 
     @property
     def clocks_per_click(self) -> np.ndarray:
-        return self._data["clocks_per_click"]
+        return self._clocks_per_click
 
     @property
     def notated_32nd_notes_per_beat(self) -> np.ndarray:
-        return self._data["notated_32nd_notes_per_beat"]
+        return self._notated_32nd_notes_per_beat
 
     @classmethod
     def concatenate(cls, arrays: Iterable["Signatures"]) -> "Signatures":
-        """Concatenate multiple Signaturess."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
+        """Concatenate multiple Signatures."""
+        if not arrays:
+            return cls.zeros(0)
+        arrays_list = list(arrays)
+        if len(arrays_list) == 1:
+            return arrays_list[0]
+
+        instance = cls.__new__(cls)
+        instance._time = np.concatenate([arr._time for arr in arrays_list])
+        instance._tick = np.concatenate([arr._tick for arr in arrays_list])
+        instance._numerator = np.concatenate([arr._numerator for arr in arrays_list])
+        instance._denominator = np.concatenate([arr._denominator for arr in arrays_list])
+        instance._clocks_per_click = np.concatenate([arr._clocks_per_click for arr in arrays_list])
+        instance._notated_32nd_notes_per_beat = np.concatenate(
+            [arr._notated_32nd_notes_per_beat for arr in arrays_list]
+        )
+        return instance
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._time)
 
     @overload
     def __getitem__(self, index: int) -> Signature: ...
@@ -431,27 +482,43 @@ class Signatures:
 
     def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Signatures|Signature":
         if isinstance(index, int):
-            result = self._data[index]
             return Signature(
-                float(result["time"]),
-                int(result["tick"]),
-                int(result["numerator"]),
-                int(result["denominator"]),
-                int(result["clocks_per_click"]),
-                int(result["notated_32nd_notes_per_beat"]),
+                float(self._time[index]),
+                int(self._tick[index]),
+                int(self._numerator[index]),
+                int(self._denominator[index]),
+                int(self._clocks_per_click[index]),
+                int(self._notated_32nd_notes_per_beat[index]),
             )
-        result = self._data[index]
-        return Signatures.from_array(result)
+        instance = self.__class__.__new__(self.__class__)
+        instance._time = self._time[index]
+        instance._tick = self._tick[index]
+        instance._numerator = self._numerator[index]
+        instance._denominator = self._denominator[index]
+        instance._clocks_per_click = self._clocks_per_click[index]
+        instance._notated_32nd_notes_per_beat = self._notated_32nd_notes_per_beat[index]
+        return instance
+
+    def as_array(self) -> np.ndarray:
+        """Convert SoA back to structured array for compatibility."""
+        data = np.empty(len(self), dtype=signature_dtype)
+        data["time"] = self._time
+        data["tick"] = self._tick
+        data["numerator"] = self._numerator
+        data["denominator"] = self._denominator
+        data["clocks_per_click"] = self._clocks_per_click
+        data["notated_32nd_notes_per_beat"] = self._notated_32nd_notes_per_beat
+        return data
 
     def __iter__(self) -> Generator[Signature, None, None]:
-        for i in range(len(self._data)):
+        for i in range(len(self)):
             yield Signature(
-                self.time[i],
-                self.tick[i],
-                self.numerator[i],
-                self.denominator[i],
-                self.clocks_per_click[i],
-                self.notated_32nd_notes_per_beat[i],
+                self._time[i],
+                self._tick[i],
+                self._numerator[i],
+                self._denominator[i],
+                self._clocks_per_click[i],
+                self._notated_32nd_notes_per_beat[i],
             )
 
 
@@ -486,7 +553,7 @@ class Note:
 
 
 class Notes:
-    """Wrapper for a structured numpy array with note_dtype elements."""
+    """Struct of Arrays wrapper for note data elements."""
 
     def __init__(
         self,
@@ -502,14 +569,13 @@ class Notes:
         if isinstance(velocity, list):
             velocity = np.array(velocity, dtype=np.uint8)
 
-        data = np.empty(len(start), dtype=note_dtype)
-        data["start"] = start.time
-        data["start_tick"] = start.tick
-        data["duration"] = duration
-        data["duration_tick"] = duration_tick
-        data["pitch"] = pitch
-        data["velocity"] = velocity
-        self._data = data
+        # Store as separate arrays (SoA)
+        self._start = np.array(start.time, dtype=np.float64)
+        self._start_tick = np.array(start.tick, dtype=np.int32)
+        self._duration = np.array(duration, dtype=np.float64)
+        self._duration_tick = np.array(duration_tick, dtype=np.int32)
+        self._pitch = np.array(pitch, dtype=np.int32)
+        self._velocity = np.array(velocity, dtype=np.uint8)
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> "Notes":
@@ -518,75 +584,100 @@ class Notes:
         if data.ndim != 1:
             raise ValueError("Notes must be 1D")
         instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
+        # Convert from AoS to SoA
+        instance._start = data["start"].copy()
+        instance._start_tick = data["start_tick"].copy()
+        instance._duration = data["duration"].copy()
+        instance._duration_tick = data["duration_tick"].copy()
+        instance._pitch = data["pitch"].copy()
+        instance._velocity = data["velocity"].copy()
         return instance
 
     @classmethod
     def zeros(cls, size: int) -> "Notes":
         """Initialize the Notes with zeros."""
-        return Notes.from_array(np.zeros(size, dtype=note_dtype))
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._start = np.zeros(size, dtype=np.float64)
+        instance._start_tick = np.zeros(size, dtype=np.int32)
+        instance._duration = np.zeros(size, dtype=np.float64)
+        instance._duration_tick = np.zeros(size, dtype=np.int32)
+        instance._pitch = np.zeros(size, dtype=np.int32)
+        instance._velocity = np.zeros(size, dtype=np.uint8)
+        return instance
 
     @classmethod
     def concatenate(cls, arrays: Iterable["Notes"]) -> "Notes":
-        """Concatenate multiple Notess."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
+        """Concatenate multiple Notes."""
+        if not arrays:
+            return cls.zeros(0)
+        arrays_list = list(arrays)
+        if len(arrays_list) == 1:
+            return arrays_list[0]
+
+        instance = cls.__new__(cls)
+        instance._start = np.concatenate([arr._start for arr in arrays_list])
+        instance._start_tick = np.concatenate([arr._start_tick for arr in arrays_list])
+        instance._duration = np.concatenate([arr._duration for arr in arrays_list])
+        instance._duration_tick = np.concatenate([arr._duration_tick for arr in arrays_list])
+        instance._pitch = np.concatenate([arr._pitch for arr in arrays_list])
+        instance._velocity = np.concatenate([arr._velocity for arr in arrays_list])
+        return instance
 
     @property
     def start(self) -> np.ndarray:
-        return self._data["start"]
+        return self._start
 
     @start.setter
     def start(self, value: np.ndarray) -> None:
-        self._data["start"][:] = value
+        self._start[:] = value
 
     @property
     def end(self) -> np.ndarray:
-        return self._data["start"] + self._data["duration"]
+        return self._start + self._duration
 
     @property
     def end_tick(self) -> np.ndarray:
-        return self._data["start_tick"] + self._data["duration_tick"]
+        return self._start_tick + self._duration_tick
 
     @property
     def start_tick(self) -> np.ndarray:
-        return self._data["start_tick"]
+        return self._start_tick
 
     @start_tick.setter
     def start_tick(self, value: np.ndarray) -> None:
-        self._data["start_tick"][:] = value
+        self._start_tick[:] = value
 
     @property
     def duration(self) -> np.ndarray:
-        return self._data["duration"]
+        return self._duration
 
     @duration.setter
     def duration(self, value: np.ndarray) -> None:
-        self._data["duration"][:] = value
+        self._duration[:] = value
 
     @property
     def duration_tick(self) -> np.ndarray:
-        return self._data["duration_tick"]
+        return self._duration_tick
 
     @duration_tick.setter
     def duration_tick(self, value: np.ndarray) -> None:
-        self._data["duration_tick"][:] = value
+        self._duration_tick[:] = value
 
     @property
     def velocity(self) -> np.ndarray:
-        return self._data["velocity"]
+        return self._velocity
 
     @velocity.setter
     def velocity(self, value: np.ndarray) -> None:
-        self._data["velocity"][:] = value
+        self._velocity[:] = value
 
     @property
     def pitch(self) -> np.ndarray:
-        return self._data["pitch"]
+        return self._pitch
 
     @pitch.setter
     def pitch(self, value: np.ndarray) -> None:
-        self._data["pitch"][:] = value
+        self._pitch[:] = value
 
     @overload
     def __getitem__(self, index: int) -> Note: ...
@@ -595,47 +686,69 @@ class Notes:
 
     def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Notes|Note":
         if isinstance(index, int):
-            result = self._data[index]
             return Note(
-                float(result["start"]),
-                int(result["start_tick"]),
-                float(result["duration"]),
-                int(result["duration_tick"]),
-                int(result["pitch"]),
-                int(result["velocity"]),
+                float(self._start[index]),
+                int(self._start_tick[index]),
+                float(self._duration[index]),
+                int(self._duration_tick[index]),
+                int(self._pitch[index]),
+                int(self._velocity[index]),
             )
-        result = self._data[index]
-        return Notes.from_array(result)  # Return new wrapper for slices or boolean arrays
+        instance = self.__class__.__new__(self.__class__)
+        instance._start = self._start[index]
+        instance._start_tick = self._start_tick[index]
+        instance._duration = self._duration[index]
+        instance._duration_tick = self._duration_tick[index]
+        instance._pitch = self._pitch[index]
+        instance._velocity = self._velocity[index]
+        return instance
 
     def delete(self, index: int | slice | np.ndarray) -> None:
         """Delete notes at the specified index."""
         if isinstance(index, np.ndarray):
             assert index.ndim == 1, "Index array must be 1D"
-        new_data = np.delete(self._data, index, axis=0)
-        self._data = new_data  # type: ignore
+        self._start = np.delete(self._start, index, axis=0)
+        self._start_tick = np.delete(self._start_tick, index, axis=0)
+        self._duration = np.delete(self._duration, index, axis=0)
+        self._duration_tick = np.delete(self._duration_tick, index, axis=0)
+        self._pitch = np.delete(self._pitch, index, axis=0)
+        self._velocity = np.delete(self._velocity, index, axis=0)
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "Notes") -> None:
-        self._data[index] = value._data
+        self._start[index] = value._start
+        self._start_tick[index] = value._start_tick
+        self._duration[index] = value._duration
+        self._duration_tick[index] = value._duration_tick
+        self._pitch[index] = value._pitch
+        self._velocity[index] = value._velocity
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._start)
 
     def as_array(self) -> np.ndarray:
-        return self._data
+        """Convert SoA back to structured array for compatibility."""
+        data = np.empty(len(self), dtype=note_dtype)
+        data["start"] = self._start
+        data["start_tick"] = self._start_tick
+        data["duration"] = self._duration
+        data["duration_tick"] = self._duration_tick
+        data["pitch"] = self._pitch
+        data["velocity"] = self._velocity
+        return data
 
     @property
     def size(self) -> int:
-        return self._data.size
+        return self._start.size
 
     def __iter__(self) -> Generator[Note, None, None]:
-        for i in range(len(self._data)):
+        for i in range(len(self)):
             yield Note(
-                self.start[i],
-                self.start_tick[i],
-                self.duration[i],
-                self.duration_tick[i],
-                self.pitch[i],
-                self.velocity[i],
+                self._start[i],
+                self._start_tick[i],
+                self._duration[i],
+                self._duration_tick[i],
+                self._pitch[i],
+                self._velocity[i],
             )
 
     def __repr__(self) -> str:
@@ -659,7 +772,7 @@ class Control:
 
 
 class Controls:
-    """Wrapper for a structured numpy array with control_dtype elements."""
+    """Struct of Arrays wrapper for control data elements."""
 
     def __init__(
         self,
@@ -672,17 +785,11 @@ class Controls:
         if isinstance(value, list):
             value = np.array(value, dtype=np.int32)
 
-        if isinstance(number, list):
-            number = np.array(number, dtype=np.int32)
-        if isinstance(value, list):
-            value = np.array(value, dtype=np.int32)
-
-        data = np.empty(len(ticktime), dtype=control_dtype)
-        data["time"] = ticktime.time
-        data["tick"] = ticktime.tick
-        data["number"] = number
-        data["value"] = value
-        self._data = data
+        # Store as separate arrays (SoA)
+        self._time = np.array(ticktime.time, dtype=np.float64)
+        self._tick = np.array(ticktime.tick, dtype=np.int32)
+        self._number = np.array(number, dtype=np.int32)
+        self._value = np.array(value, dtype=np.int32)
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> "Controls":
@@ -691,51 +798,70 @@ class Controls:
         if data.ndim != 1:
             raise ValueError("Controls must be 1D")
         instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
+        # Convert from AoS to SoA
+        instance._time = data["time"].copy()
+        instance._tick = data["tick"].copy()
+        instance._number = data["number"].copy()
+        instance._value = data["value"].copy()
         return instance
 
     @classmethod
     def zeros(cls, size: int) -> "Controls":
         """Initialize the Controls with zeros."""
-        return Controls.from_array(np.zeros(size, dtype=control_dtype))
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._time = np.zeros(size, dtype=np.float64)
+        instance._tick = np.zeros(size, dtype=np.int32)
+        instance._number = np.zeros(size, dtype=np.int32)
+        instance._value = np.zeros(size, dtype=np.int32)
+        return instance
 
     @classmethod
     def concatenate(cls, arrays: Iterable["Controls"]) -> "Controls":
-        """Concatenate multiple Notess."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
+        """Concatenate multiple Controls."""
+        if not arrays:
+            return cls.zeros(0)
+        arrays_list = list(arrays)
+        if len(arrays_list) == 1:
+            return arrays_list[0]
+
+        instance = cls.__new__(cls)
+        instance._time = np.concatenate([arr._time for arr in arrays_list])
+        instance._tick = np.concatenate([arr._tick for arr in arrays_list])
+        instance._number = np.concatenate([arr._number for arr in arrays_list])
+        instance._value = np.concatenate([arr._value for arr in arrays_list])
+        return instance
 
     @property
     def time(self) -> np.ndarray:
-        return self._data["time"]
+        return self._time
 
     @time.setter
     def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
+        self._time[:] = value
 
     @property
     def tick(self) -> np.ndarray:
-        return self._data["tick"]
+        return self._tick
 
     @tick.setter
     def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
+        self._tick[:] = value
 
     @property
     def number(self) -> np.ndarray:
-        return self._data["number"]
+        return self._number
 
     @number.setter
     def number(self, value: np.ndarray) -> None:
-        self._data["number"][:] = value
+        self._number[:] = value
 
     @property
     def value(self) -> np.ndarray:
-        return self._data["value"]
+        return self._value
 
     @value.setter
     def value(self, value: np.ndarray) -> None:
-        self._data["value"][:] = value
+        self._value[:] = value
 
     @overload
     def __getitem__(self, index: int) -> Control: ...
@@ -744,42 +870,57 @@ class Controls:
 
     def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Controls|Control":
         if isinstance(index, int):
-            result = self._data[index]
             return Control(
-                float(result["time"]),
-                int(result["tick"]),
-                int(result["number"]),
-                int(result["value"]),
+                float(self._time[index]),
+                int(self._tick[index]),
+                int(self._number[index]),
+                int(self._value[index]),
             )
-        result = self._data[index]
-        return Controls.from_array(result)  # Return new wrapper for slices or boolean arrays
+        instance = self.__class__.__new__(self.__class__)
+        instance._time = self._time[index]
+        instance._tick = self._tick[index]
+        instance._number = self._number[index]
+        instance._value = self._value[index]
+        return instance
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "Controls") -> None:
-        self._data[index] = value._data
+        self._time[index] = value._time
+        self._tick[index] = value._tick
+        self._number[index] = value._number
+        self._value[index] = value._value
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._time)
 
     def as_array(self) -> np.ndarray:
-        return self._data
+        """Convert SoA back to structured array for compatibility."""
+        data = np.empty(len(self), dtype=control_dtype)
+        data["time"] = self._time
+        data["tick"] = self._tick
+        data["number"] = self._number
+        data["value"] = self._value
+        return data
 
     @property
     def size(self) -> int:
-        return self._data.size
+        return self._time.size
 
     def __iter__(self) -> Generator[Control, None, None]:
-        for i in range(len(self._data)):
+        for i in range(len(self)):
             yield Control(
-                self.time[i],
-                self.tick[i],
-                self.number[i],
-                self.value[i],
+                self._time[i],
+                self._tick[i],
+                self._number[i],
+                self._value[i],
             )
 
     def sort_time(self) -> None:
         """Sort the Controls by time."""
-        sorted_indices = np.argsort(self.time)
-        self._data = self._data[sorted_indices]  # type: ignore
+        sorted_indices = np.argsort(self._time)
+        self._time = self._time[sorted_indices]
+        self._tick = self._tick[sorted_indices]
+        self._number = self._number[sorted_indices]
+        self._value = self._value[sorted_indices]
 
 
 @dataclass
@@ -799,7 +940,7 @@ class Pedal:
 
 
 class Pedals:
-    """Wrapper for a structured numpy array with pedal_dtype elements."""
+    """Struct of Arrays wrapper for pedal data elements."""
 
     def __init__(
         self,
@@ -807,64 +948,85 @@ class Pedals:
         end: TickTime,
     ) -> None:
         duration = end.time - start.time
-        data = np.empty(len(start.time), dtype=note_dtype)
-        data["time"] = start.time
-        data["tick"] = start.tick
-        data["duration"] = duration
-        self._data = data
+        duration_tick = end.tick - start.tick
+
+        # Store as separate arrays (SoA)
+        self._time = np.array(start.time, dtype=np.float64)
+        self._tick = np.array(start.tick, dtype=np.int32)
+        self._duration = np.array(duration, dtype=np.float64)
+        self._duration_tick = np.array(duration_tick, dtype=np.int32)
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> "Pedals":
         if data.dtype != pedal_dtype:
-            raise ValueError("Invalid dtype for Controls")
+            raise ValueError("Invalid dtype for Pedals")
         if data.ndim != 1:
-            raise ValueError("Controls must be 1D")
+            raise ValueError("Pedals must be 1D")
         instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
+        # Convert from AoS to SoA
+        instance._time = data["time"].copy()
+        instance._tick = data["tick"].copy()
+        instance._duration = data["duration"].copy()
+        instance._duration_tick = data["duration_tick"].copy()
         return instance
 
     @classmethod
     def zeros(cls, size: int) -> "Pedals":
         """Initialize the Pedals with zeros."""
-        return Pedals.from_array(np.zeros(size, dtype=pedal_dtype))
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._time = np.zeros(size, dtype=np.float64)
+        instance._tick = np.zeros(size, dtype=np.int32)
+        instance._duration = np.zeros(size, dtype=np.float64)
+        instance._duration_tick = np.zeros(size, dtype=np.int32)
+        return instance
 
     @classmethod
     def concatenate(cls, arrays: Iterable["Pedals"]) -> "Pedals":
-        """Concatenate multiple Pedalss."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
+        """Concatenate multiple Pedals."""
+        if not arrays:
+            return cls.zeros(0)
+        arrays_list = list(arrays)
+        if len(arrays_list) == 1:
+            return arrays_list[0]
+
+        instance = cls.__new__(cls)
+        instance._time = np.concatenate([arr._time for arr in arrays_list])
+        instance._tick = np.concatenate([arr._tick for arr in arrays_list])
+        instance._duration = np.concatenate([arr._duration for arr in arrays_list])
+        instance._duration_tick = np.concatenate([arr._duration_tick for arr in arrays_list])
+        return instance
 
     @property
     def time(self) -> np.ndarray:
-        return self._data["time"]
+        return self._time
 
     @time.setter
     def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
+        self._time[:] = value
 
     @property
     def tick(self) -> np.ndarray:
-        return self._data["tick"]
+        return self._tick
 
     @tick.setter
     def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
+        self._tick[:] = value
 
     @property
     def duration(self) -> np.ndarray:
-        return self._data["duration"]
+        return self._duration
 
     @duration.setter
     def duration(self, value: np.ndarray) -> None:
-        self._data["duration"][:] = value
+        self._duration[:] = value
 
     @property
     def duration_tick(self) -> np.ndarray:
-        return self._data["duration_tick"]
+        return self._duration_tick
 
     @duration_tick.setter
     def duration_tick(self, value: np.ndarray) -> None:
-        self._data["duration_tick"][:] = value
+        self._duration_tick[:] = value
 
     @overload
     def __getitem__(self, index: int) -> Pedal: ...
@@ -873,36 +1035,48 @@ class Pedals:
 
     def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "Pedals|Pedal":
         if isinstance(index, int):
-            result = self._data[index]
             return Pedal(
-                float(result["time"]),
-                int(result["tick"]),
-                float(result["duration"]),
-                int(result["duration_tick"]),
+                float(self._time[index]),
+                int(self._tick[index]),
+                float(self._duration[index]),
+                int(self._duration_tick[index]),
             )
-        result = self._data[index]
-        return Pedals.from_array(result)  # Return new wrapper for slices or boolean arrays
+        instance = self.__class__.__new__(self.__class__)
+        instance._time = self._time[index]
+        instance._tick = self._tick[index]
+        instance._duration = self._duration[index]
+        instance._duration_tick = self._duration_tick[index]
+        return instance
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "Pedals") -> None:
-        self._data[index] = value._data
+        self._time[index] = value._time
+        self._tick[index] = value._tick
+        self._duration[index] = value._duration
+        self._duration_tick[index] = value._duration_tick
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._time)
 
     def as_array(self) -> np.ndarray:
-        return self._data
+        """Convert SoA back to structured array for compatibility."""
+        data = np.empty(len(self), dtype=pedal_dtype)
+        data["time"] = self._time
+        data["tick"] = self._tick
+        data["duration"] = self._duration
+        data["duration_tick"] = self._duration_tick
+        return data
 
     @property
     def size(self) -> int:
-        return self._data.size
+        return self._time.size
 
     def __iter__(self) -> Generator[Pedal, None, None]:
-        for i in range(len(self._data)):
+        for i in range(len(self)):
             yield Pedal(
-                self.time[i],
-                self.tick[i],
-                self.duration[i],
-                self.duration_tick[i],
+                self._time[i],
+                self._tick[i],
+                self._duration[i],
+                self._duration_tick[i],
             )
 
 
@@ -921,7 +1095,7 @@ class PitchBend:
 
 
 class PitchBends:
-    """Wrapper for a structured numpy array with pitch_bend_dtype elements."""
+    """Struct of Arrays wrapper for pitch bend data elements."""
 
     def __init__(
         self,
@@ -930,56 +1104,72 @@ class PitchBends:
     ) -> None:
         if isinstance(value, list):
             value = np.array(value, dtype=np.int32)
-        data = np.empty(len(value), dtype=note_dtype)
-        data["time"] = ticktime.time
-        data["tick"] = ticktime.tick
-        data["value"] = value
-        self._data = data
+
+        # Store as separate arrays (SoA)
+        self._time = np.array(ticktime.time, dtype=np.float64)
+        self._tick = np.array(ticktime.tick, dtype=np.int32)
+        self._value = np.array(value, dtype=np.int32)
 
     @classmethod
     def from_array(cls, data: np.ndarray) -> "PitchBends":
         if data.dtype != pitch_bend_dtype:
-            raise ValueError("Invalid dtype for Controls")
+            raise ValueError("Invalid dtype for PitchBends")
         if data.ndim != 1:
-            raise ValueError("Controls must be 1D")
+            raise ValueError("PitchBends must be 1D")
         instance = cls.__new__(cls)  # Create a new instance without calling __init__
-        instance._data = data
+        # Convert from AoS to SoA
+        instance._time = data["time"].copy()
+        instance._tick = data["tick"].copy()
+        instance._value = data["value"].copy()
         return instance
 
     @classmethod
     def zeros(cls, size: int) -> "PitchBends":
         """Initialize the PitchBends with zeros."""
-        return PitchBends.from_array(np.zeros(size, dtype=pitch_bend_dtype))
+        instance = cls.__new__(cls)  # Create a new instance without calling __init__
+        instance._time = np.zeros(size, dtype=np.float64)
+        instance._tick = np.zeros(size, dtype=np.int32)
+        instance._value = np.zeros(size, dtype=np.int32)
+        return instance
 
     @classmethod
     def concatenate(cls, arrays: Iterable["PitchBends"]) -> "PitchBends":
-        """Concatenate multiple PitchBendss."""
-        data = np.concatenate([arr._data for arr in arrays])
-        return cls.from_array(data)
+        """Concatenate multiple PitchBends."""
+        if not arrays:
+            return cls.zeros(0)
+        arrays_list = list(arrays)
+        if len(arrays_list) == 1:
+            return arrays_list[0]
+
+        instance = cls.__new__(cls)
+        instance._time = np.concatenate([arr._time for arr in arrays_list])
+        instance._tick = np.concatenate([arr._tick for arr in arrays_list])
+        instance._value = np.concatenate([arr._value for arr in arrays_list])
+        return instance
 
     @property
     def time(self) -> np.ndarray:
-        return self._data["time"]
+        return self._time
 
     @time.setter
     def time(self, value: np.ndarray) -> None:
-        self._data["time"][:] = value
+        self._time[:] = value
 
     @property
     def tick(self) -> np.ndarray:
-        return self._data["tick"]
+        return self._tick
 
     @tick.setter
     def tick(self, value: np.ndarray) -> None:
-        self._data["tick"][:] = value
+        self._tick[:] = value
 
     @property
     def value(self) -> np.ndarray:
-        return self._data["value"]
+        return self._value
 
     @value.setter
     def value(self, value: np.ndarray) -> None:
-        self._data["value"][:] = value
+        self._value[:] = value
 
     @overload
     def __getitem__(self, index: int) -> PitchBend: ...
@@ -988,34 +1178,43 @@ class PitchBends:
 
     def __getitem__(self, index: int | slice | np.ndarray | list[int]) -> "PitchBends|PitchBend":
         if isinstance(index, int):
-            result = self._data[index]
             return PitchBend(
-                float(result["time"]),
-                int(result["tick"]),
-                int(result["value"]),
+                float(self._time[index]),
+                int(self._tick[index]),
+                int(self._value[index]),
             )
-        result = self._data[index]
-        return PitchBends.from_array(result)  # Return new wrapper for slices or boolean arrays
+        instance = self.__class__.__new__(self.__class__)
+        instance._time = self._time[index]
+        instance._tick = self._tick[index]
+        instance._value = self._value[index]
+        return instance
 
     def __setitem__(self, index: int | slice | np.ndarray, value: "PitchBends") -> None:
-        self._data[index] = value._data
+        self._time[index] = value._time
+        self._tick[index] = value._tick
+        self._value[index] = value._value
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._time)
 
     def as_array(self) -> np.ndarray:
-        return self._data
+        """Convert SoA back to structured array for compatibility."""
+        data = np.empty(len(self), dtype=pitch_bend_dtype)
+        data["time"] = self._time
+        data["tick"] = self._tick
+        data["value"] = self._value
+        return data
 
     @property
     def size(self) -> int:
-        return self._data.size
+        return self._time.size
 
     def __iter__(self) -> Generator[PitchBend, None, None]:
-        for i in range(len(self._data)):
+        for i in range(len(self)):
             yield PitchBend(
-                self.time[i],
-                self.tick[i],
-                self.value[i],
+                self._time[i],
+                self._tick[i],
+                self._value[i],
             )
 
 
@@ -1181,8 +1380,8 @@ class Score:
         shorten_notes: bool = True,
         antialiasing: bool = False,
     ) -> "PianoRoll":
-        
         from numba_midi.pianoroll import score_to_piano_roll
+
         return score_to_piano_roll(
             self,
             pitch_min=pitch_min,
@@ -1194,7 +1393,14 @@ class Score:
         )
 
     def get_subdivision_beat_and_bar_ticks(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return score_acc.get_subdivision_beat_and_bar_ticks(self.ticks_per_quarter, self.last_tick, self.time_signature._data)
+        return score_acc.get_subdivision_beat_and_bar_ticks_soa(
+            self.ticks_per_quarter,
+            self.last_tick,
+            self.time_signature._time,
+            self.time_signature._tick,
+            self.time_signature._numerator,
+            self.time_signature._denominator,
+        )
 
     def get_subdivision_beat_and_bar_times(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get the beat and bar times in seconds."""
@@ -1581,8 +1787,13 @@ def group_data(keys: list[np.ndarray], data: Optional[np.ndarray] = None) -> dic
 def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tuple[np.ndarray, np.ndarray]:
     notes_order = np.lexsort((note_events.event_type, note_events.tick, note_events.value1, note_events.channel))
     sorted_note_events = note_events[notes_order]
-    ordered_note_start_ids, ordered_note_stop_ids = score_acc.extract_notes_start_stop(
-        sorted_note_events.as_array(), notes_mode_mapping[notes_mode]
+    ordered_note_start_ids, ordered_note_stop_ids = score_acc.extract_notes_start_stop_soa(
+        sorted_note_events.tick,
+        sorted_note_events.event_type,
+        sorted_note_events.channel,
+        sorted_note_events.value1,
+        sorted_note_events.value2,
+        notes_mode_mapping[notes_mode],
     )
     if len(ordered_note_start_ids) > 0:
         note_start_ids = notes_order[ordered_note_start_ids]
@@ -1600,7 +1811,7 @@ def extract_notes_start_stop(note_events: Events, notes_mode: NotesMode) -> tupl
 
 def get_pedals_from_controls(channel_controls: Controls) -> Pedals:
     """Get pedal events from control changes."""
-    pedals_start, pedals_end = score_acc.get_pedals_from_controls(channel_controls.as_array())
+    pedals_start, pedals_end = score_acc.get_pedals_from_controls_soa(channel_controls.number, channel_controls.value)
     if len(pedals_start) > 0:
         pedals = Pedals.zeros(len(pedals_start))
         pedals.time = channel_controls.time[pedals_start]
@@ -1700,12 +1911,14 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
             continue
 
         # get the program for each event
-        events_programs = score_acc.get_events_program(midi_track.events.as_array())
+        events_programs = score_acc.get_events_program_soa(
+            midi_track.events.event_type, midi_track.events.channel, midi_track.events.value1
+        )
 
         events = midi_track.events
         # compute the tick and time of each event
         events_ticks = events.tick
-        events_times = get_event_times(events.as_array(), tempo_events.as_array(), midi_score.ticks_per_quarter)
+        events_times = get_event_times_soa(events, tempo_events, midi_score.ticks_per_quarter)
 
         duration_tick = max(duration_tick, events.tick.max())
 
@@ -1809,8 +2022,8 @@ def midi_to_score(midi_score: Midi, minimize_tempo: bool = True, notes_mode: Not
                 notes_np.start_tick = track_note_start_events.tick
                 notes_np.duration = note_stops_time[track_notes_ids] - note_starts_time[track_notes_ids]
                 notes_np.duration_tick = track_note_stop_events.tick.astype(
-                    np.uint32
-                ) - track_note_start_events.tick.astype(np.uint32)
+                    np.int32
+                ) - track_note_start_events.tick.astype(np.int32)
                 # assert np.all(notes_np.duration_tick > 0), "duration_tick should be strictly positive"
                 notes_np.pitch = track_note_start_events.value1
                 notes_np.velocity = track_note_start_events.value2
@@ -2070,9 +2283,9 @@ def merge_non_overlapping_tracks(score: Score) -> Score:
                     continue
                 if not np.array_equal(new_track.controls.value, track.controls.value):
                     continue
-                if not np.array_equal(new_track.pedals._data, track.pedals._data):
+                if not np.array_equal(new_track.pedals.as_array(), track.pedals.as_array()):
                     continue
-                if not np.array_equal(new_track.pitch_bends._data, track.pitch_bends._data):
+                if not np.array_equal(new_track.pitch_bends.as_array(), track.pitch_bends.as_array()):
                     continue
 
                 # check if any note overlaps with the new track
@@ -2253,13 +2466,17 @@ def filter_pitch(score: Score, pitch_min: int, pitch_max: int) -> Score:
 
 def get_overlapping_notes(notes: Notes) -> np.ndarray:
     order = np.lexsort((notes.start, notes.pitch))
-    overlapping_notes = score_acc.get_overlapping_notes_pairs(notes.start, notes.duration, notes.pitch, order)
+    overlapping_notes = score_acc.get_overlapping_notes_pairs_soa(
+        notes.start_tick, notes.duration_tick, notes.pitch, order
+    )
     return overlapping_notes
 
 
 def get_overlapping_notes_ticks(notes: Notes) -> np.ndarray:
     order = np.lexsort((notes.start_tick, notes.pitch)).astype(np.int32)
-    overlapping_notes = score_acc.get_overlapping_notes_pairs(notes.start_tick, notes.duration_tick, notes.pitch, order)
+    overlapping_notes = score_acc.get_overlapping_notes_pairs_soa(
+        notes.start_tick, notes.duration_tick, notes.pitch, order
+    )
     return overlapping_notes
 
 

@@ -66,12 +66,7 @@ def benchmark_method(
 
 
 def benchmark_method(
-    name: str,
-    func: Callable[[Any], Any],
-    num_max_files: int,
-    num_iter: int,
-    input_bytes: bool,
-    debug:bool=True
+    name: str, func: Callable[[Any], Any], num_max_files: int, num_iter: int, input_bytes: bool, debug: bool = True
 ) -> None:
     # get the list of midi files
     folder = Path(__file__).parent / "data" / "lakh" / "benchmarks"
@@ -141,7 +136,7 @@ def benchmark_method(
 
 
 def benchmark() -> None:
-    num_max_files = 1
+    num_max_files = 100
     num_iter = 10
     # benchmark_method(
     #     "pretty_midi", pretty_midi.PrettyMIDI, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
@@ -149,20 +144,20 @@ def benchmark() -> None:
     benchmark_method(
         "numba_midi_files", numba_midi.load_score, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
     )
-    # benchmark_method(
-    #     "numba_midi_bytes",
-    #     numba_midi.load_score_bytes,
-    #     num_max_files=num_max_files,
-    #     input_bytes=True,
-    #     num_iter=num_iter,
-    # )
+    benchmark_method(
+        "numba_midi_bytes",
+        numba_midi.load_score_bytes,
+        num_max_files=num_max_files,
+        input_bytes=True,
+        num_iter=num_iter,
+    )
 
-    # benchmark_method(
-    #     "symusic_files", symusic.Score.from_file, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
-    # )
-    # benchmark_method(
-    #     "symusic_bytes", symusic.Score.from_midi, num_max_files=num_max_files, input_bytes=True, num_iter=num_iter
-    # )
+    benchmark_method(
+        "symusic_files", symusic.Score.from_file, num_max_files=num_max_files, input_bytes=False, num_iter=num_iter
+    )
+    benchmark_method(
+        "symusic_bytes", symusic.Score.from_midi, num_max_files=num_max_files, input_bytes=True, num_iter=num_iter
+    )
 
 
 if __name__ == "__main__":

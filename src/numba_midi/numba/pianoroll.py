@@ -1,6 +1,5 @@
 """Tools to process piano roll reprentationss of MIDI scores."""
 
-
 from numba.core.decorators import njit
 import numpy as np
 

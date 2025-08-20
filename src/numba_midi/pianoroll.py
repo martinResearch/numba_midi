@@ -7,10 +7,9 @@ from typing import Optional
 import numpy as np
 
 # from numba_midi.numba.pianoroll import add_notes_to_piano_roll, piano_roll_to_score
-
 import numba_midi.cython.pianoroll as pianoroll_accel
-#from numba_midi.cython.pianoroll import add_notes_to_piano_roll, piano_roll_to_score
 
+# from numba_midi.cython.pianoroll import add_notes_to_piano_roll, piano_roll_to_score
 from numba_midi.score import (
     check_no_overlapping_notes,
     check_no_overlapping_notes_in_score,

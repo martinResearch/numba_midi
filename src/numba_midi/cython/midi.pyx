@@ -19,7 +19,7 @@ cnp.import_array()
 
 # Define the event dtype structure that matches the numpy definition
 event_dtype = np.dtype([
-    ("tick", np.uint32),
+    ("tick", np.int32),
     ("event_type", np.uint8),
     ("channel", np.uint8),
     ("value1", np.int32),
@@ -38,7 +38,7 @@ cpdef cnp.ndarray get_event_times(
 ):
     """Get the time of each event in ticks and seconds."""
     cdef Py_ssize_t i
-    cdef uint32_t tick = 0
+    cdef int32_t tick = 0
     cdef double time = 0.0
     cdef double quarter_notes_per_minute_init = 120.0
     cdef double second_per_tick = quarter_notes_per_minute_init / ticks_per_quarter / 60.0
@@ -49,16 +49,16 @@ cpdef cnp.ndarray get_event_times(
     cdef int ref_tick = 0
     cdef double ref_time = 0.0
     cdef int last_tempo_event = -1
-    cdef uint32_t delta_tick
+    cdef int32_t delta_tick
     cdef double microseconds_per_quarter_note
     for i in range(num_events):
-        delta_tick = <uint32_t>(midi_events[i]['tick']) - tick
+        delta_tick = <int32_t>(midi_events[i]['tick']) - tick
         tick += delta_tick
         while (last_tempo_event + 1 < num_tempo_events and 
-               tick >= <uint32_t>(tempo_events[last_tempo_event + 1]['tick'])):
+               tick >= <int32_t>(tempo_events[last_tempo_event + 1]['tick'])):
             last_tempo_event += 1
-            ref_time = ref_time + (<uint32_t>(tempo_events[last_tempo_event]['tick']) - ref_tick) * second_per_tick
-            ref_tick = <uint32_t>(tempo_events[last_tempo_event]['tick'])
+            ref_time = ref_time + (<int32_t>(tempo_events[last_tempo_event]['tick']) - ref_tick) * second_per_tick
+            ref_tick = <int32_t>(tempo_events[last_tempo_event]['tick'])
             microseconds_per_quarter_note = <double>(tempo_events[last_tempo_event]['value1'])
             second_per_tick = microseconds_per_quarter_note / ticks_per_quarter / 1_000_000
         time = ref_time + (tick - ref_tick) * second_per_tick
@@ -69,9 +69,9 @@ cpdef cnp.ndarray get_event_times(
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cnp.ndarray get_event_times_soa_fast(
-    cnp.ndarray[cnp.uint32_t, ndim=1] midi_tick,
+    cnp.ndarray[cnp.int32_t, ndim=1] midi_tick,
     cnp.ndarray[cnp.uint8_t, ndim=1] midi_event_type,
-    cnp.ndarray[cnp.uint32_t, ndim=1] tempo_tick,
+    cnp.ndarray[cnp.int32_t, ndim=1] tempo_tick,
     cnp.ndarray[cnp.int32_t, ndim=1] tempo_value1,
     int ticks_per_quarter
 ):
@@ -81,19 +81,19 @@ cpdef cnp.ndarray get_event_times_soa_fast(
     cdef cnp.ndarray[cnp.float32_t, ndim=1] events_times = np.zeros(num_events, dtype=np.float32)
     
     # Use memoryviews for fastest access
-    cdef uint32_t[:] midi_tick_mv = midi_tick
-    cdef uint32_t[:] tempo_tick_mv = tempo_tick
+    cdef int32_t[:] midi_tick_mv = midi_tick
+    cdef int32_t[:] tempo_tick_mv = tempo_tick
     cdef int32_t[:] tempo_value1_mv = tempo_value1
     cdef cnp.float32_t[:] events_times_mv = events_times
     
-    cdef uint32_t tick = 0
+    cdef int32_t tick = 0
     cdef double time = 0.0
     cdef double quarter_notes_per_minute_init = 120.0
     cdef double second_per_tick = quarter_notes_per_minute_init / ticks_per_quarter / 60.0
-    cdef uint32_t ref_tick = 0
+    cdef int32_t ref_tick = 0
     cdef double ref_time = 0.0
     cdef Py_ssize_t last_tempo_event = -1
-    cdef uint32_t delta_tick
+    cdef int32_t delta_tick
     cdef double microseconds_per_quarter_note
     cdef Py_ssize_t i
     
@@ -116,6 +116,25 @@ cpdef cnp.ndarray get_event_times_soa_fast(
             events_times_mv[i] = <cnp.float32_t>time
     
     return events_times
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef inline int read_var_length_fast(const uint8_t[::1] data, int offset, int32_t* value) nogil:
+    """Reads a variable-length quantity from the MIDI file using output parameter.
+    
+    Returns the new offset. Value is written to the value pointer.
+    """
+    cdef int32_t result = 0
+    cdef uint8_t byte
+    while True:
+        byte = data[offset]
+        result = (result << 7) | (byte & 0x7F)
+        offset += 1
+        if byte & 0x80 == 0:
+            break
+    value[0] = result
+    return offset
 
 
 @cython.boundscheck(False)
@@ -225,6 +244,7 @@ cpdef tuple parse_midi_track(bytes data_bytes, int offset):
     
     cdef uint32_t track_length = unpack_uint32(data_bytes[offset + 4:offset + 8])
     offset += 8
+    
     assert track_length > 0, "Track length must be positive"
     cdef int track_end = offset + <int>track_length
     assert track_end <= data_len, "Track length too large."
@@ -234,8 +254,8 @@ cpdef tuple parse_midi_track(bytes data_bytes, int offset):
     track_name = b""
     lyrics = []
     
-    cdef uint32_t tick = 0
-    cdef uint32_t delta_ticks
+    cdef int32_t tick = 0
+    cdef int32_t delta_ticks
     cdef uint8_t status_byte, meta_type
     cdef int meta_length, current_tempo
     cdef uint8_t numerator, denominator_power_of_2, clocks_per_click, notated_32nd_notes_per_beat
@@ -309,17 +329,20 @@ cpdef tuple parse_midi_track(bytes data_bytes, int offset):
                 offset -= 1
             
             if message_type == 0x9:  # Note On
-                pitch, velocity = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                pitch = data[offset]
+                velocity = data[offset + 1]
                 offset += 2
                 midi_events.append((tick, 0, channel, pitch, velocity, 0, 0))
             
             elif message_type == 0x8:  # Note Off
-                pitch, velocity = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                pitch = data[offset]
+                velocity = data[offset + 1]
                 offset += 2
                 midi_events.append((tick, 1, channel, pitch, velocity, 0, 0))
             
             elif message_type == 0xB:  # Control Change
-                number, value = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                number = data[offset]
+                value = data[offset + 1]
                 offset += 2
                 midi_events.append((tick, 3, channel, number, value, 0, 0))
             
@@ -335,7 +358,8 @@ cpdef tuple parse_midi_track(bytes data_bytes, int offset):
                 offset += 2
             
             elif message_type == 0xA:  # Polyphonic Aftertouch
-                pitch, pressure = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                pitch = data[offset]
+                pressure = data[offset + 1]
                 offset += 2
                 midi_events.append((tick, 7, channel, pitch, pressure, 0, 0))
             
@@ -389,7 +413,7 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
     
     # Pre-allocate arrays - estimate max events as track_length / 4 (conservative)
     cdef int max_events = <int>track_length // 2  # More conservative estimate
-    cdef cnp.ndarray[cnp.uint32_t, ndim=1] tick_array = np.zeros(max_events, dtype=np.uint32)
+    cdef cnp.ndarray[cnp.int32_t, ndim=1] tick_array = np.zeros(max_events, dtype=np.int32)
     cdef cnp.ndarray[cnp.uint8_t, ndim=1] event_type_array = np.zeros(max_events, dtype=np.uint8)
     cdef cnp.ndarray[cnp.uint8_t, ndim=1] channel_array = np.zeros(max_events, dtype=np.uint8)
     cdef cnp.ndarray[cnp.int32_t, ndim=1] value1_array = np.zeros(max_events, dtype=np.int32)
@@ -400,8 +424,8 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
     track_name = b""
     lyrics = []
     
-    cdef uint32_t tick = 0
-    cdef uint32_t delta_ticks
+    cdef int32_t tick = 0
+    cdef int32_t delta_ticks
     cdef uint8_t status_byte, meta_type
     cdef int meta_length, current_tempo
     cdef uint8_t numerator, denominator_power_of_2, clocks_per_click, notated_32nd_notes_per_beat
@@ -413,7 +437,7 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
     cdef int num_events = 0
     
     while offset < track_end:
-        delta_ticks, offset = read_var_length(data_bytes, offset)
+        offset = read_var_length_fast(data, offset, &delta_ticks)
         tick += delta_ticks
         status_byte = data[offset]
         offset += 1
@@ -421,7 +445,7 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
         if status_byte == 0xFF:  # Meta event
             meta_type = data[offset]
             offset += 1
-            meta_length, offset = read_var_length(data_bytes, offset)
+            offset = read_var_length_fast(data, offset, <int32_t*>&meta_length)
             meta_data = data_bytes[offset:offset + meta_length]
             offset += meta_length
             
@@ -480,7 +504,7 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
                 num_events += 1
         
         elif status_byte == 0xF0:  # SysEx event
-            sysex_length, offset = read_var_length(data_bytes, offset)
+            offset = read_var_length_fast(data, offset, <int32_t*>&sysex_length)
             offset += sysex_length
         
         elif status_byte in (0xF1, 0xF3):  # 1-byte messages
@@ -501,7 +525,8 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
                 offset -= 1
             
             if message_type == 0x9:  # Note On
-                pitch, velocity = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                pitch = data[offset]
+                velocity = data[offset + 1]
                 offset += 2
                 # Add note on event
 
@@ -515,7 +540,8 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
                 num_events += 1
             
             elif message_type == 0x8:  # Note Off
-                pitch, velocity = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                pitch = data[offset]
+                velocity = data[offset + 1]
                 offset += 2
                 # Add note off event
 
@@ -529,7 +555,8 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
                 num_events += 1
             
             elif message_type == 0xB:  # Control Change
-                number, value = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                number = data[offset]
+                value = data[offset + 1]
                 offset += 2
                 # Add control change event
 
@@ -572,7 +599,8 @@ cpdef tuple parse_midi_track_soa_fast(bytes data_bytes, int offset):
                 offset += 2
             
             elif message_type == 0xA:  # Polyphonic Aftertouch
-                pitch, pressure = unpack_uint8_pair(data_bytes[offset:offset + 2])
+                pitch = data[offset]
+                pressure = data[offset + 1]
                 offset += 2
                 # Add polyphonic aftertouch event
 
@@ -629,8 +657,8 @@ cpdef cnp.ndarray encode_midi_track(
     data.extend([0xFF, 0x03, len(name)])
     data.extend(name)
     
-    cdef uint32_t tick = 0
-    cdef uint32_t event_tick, delta_time
+    cdef int32_t tick = 0
+    cdef int32_t event_tick, delta_time
     cdef uint8_t event_type, channel
     cdef int32_t value1
     cdef int16_t value2
@@ -684,7 +712,7 @@ cpdef cnp.ndarray encode_midi_track(
 @cython.wraparound(False)
 cpdef cnp.ndarray encode_midi_track_soa_fast(
     bytes name,
-    cnp.ndarray[cnp.uint32_t, ndim=1] tick,
+    cnp.ndarray[cnp.int32_t, ndim=1] tick,
     cnp.ndarray[cnp.uint8_t, ndim=1] event_type,
     cnp.ndarray[cnp.uint8_t, ndim=1] channel,
     cnp.ndarray[cnp.int32_t, ndim=1] value1,
@@ -699,7 +727,7 @@ cpdef cnp.ndarray encode_midi_track_soa_fast(
     cdef int data_index = 0
     
     # Use memoryviews for fastest access
-    cdef uint32_t[:] tick_mv = tick
+    cdef int32_t[:] tick_mv = tick
     cdef uint8_t[:] event_type_mv = event_type
     cdef uint8_t[:] channel_mv = channel
     cdef int32_t[:] value1_mv = value1
@@ -722,14 +750,14 @@ cpdef cnp.ndarray encode_midi_track_soa_fast(
         data_mv[data_index + j] = name[j]
     data_index += name_len
     
-    cdef uint32_t current_tick = 0
-    cdef uint32_t event_tick, delta_time
+    cdef int32_t current_tick = 0
+    cdef int32_t event_tick, delta_time
     cdef uint8_t event_type_val, channel_val
     cdef int32_t value1_val
     cdef int16_t value2_val
     cdef uint8_t value3_val, value4_val
     cdef tuple pitch_bend_bytes
-    cdef uint32_t temp_delta
+    cdef int32_t temp_delta
     cdef int delta_bytes_needed
     cdef int i
     
@@ -829,7 +857,7 @@ cpdef cnp.ndarray encode_midi_track_soa_fast(
 @cython.wraparound(False)
 cpdef cnp.ndarray encode_midi_track_soa(
     bytes name,
-    cnp.ndarray[cnp.uint32_t, ndim=1] tick,
+    cnp.ndarray[cnp.int32_t, ndim=1] tick,
     cnp.ndarray[cnp.uint8_t, ndim=1] event_type,
     cnp.ndarray[cnp.uint8_t, ndim=1] channel,
     cnp.ndarray[cnp.int32_t, ndim=1] value1,
@@ -845,8 +873,8 @@ cpdef cnp.ndarray encode_midi_track_soa(
     data.extend([0xFF, 0x03, len(name)])
     data.extend(name)
     
-    cdef uint32_t current_tick = 0
-    cdef uint32_t event_tick, delta_time
+    cdef int32_t current_tick = 0
+    cdef int32_t event_tick, delta_time
     cdef uint8_t event_type_val, channel_val
     cdef int32_t value1_val
     cdef int16_t value2_val
@@ -854,7 +882,7 @@ cpdef cnp.ndarray encode_midi_track_soa(
     cdef tuple pitch_bend_bytes
     
     # Use memoryviews for faster access
-    cdef uint32_t[:] tick_mv = tick
+    cdef int32_t[:] tick_mv = tick
     cdef uint8_t[:] event_type_mv = event_type
     cdef uint8_t[:] channel_mv = channel
     cdef int32_t[:] value1_mv = value1

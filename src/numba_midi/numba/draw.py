@@ -1,6 +1,5 @@
 """Draw rectangles and polylines on an image using Numba for performance."""
 
-
 from numba.core.decorators import njit
 import numpy as np
 

@@ -7,11 +7,11 @@ with last known good (LKG) images stored in the repository.
 import os
 from pathlib import Path
 
-from numba_midi.draw import NumPyCanvas
 import numpy as np
 from PIL import Image
 import pytest
 
+from numba_midi.draw import NumPyCanvas
 from numba_midi.midi_draw import (
     ColorTheme,
     default_track_colors,

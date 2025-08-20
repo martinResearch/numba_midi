@@ -1,4 +1,5 @@
 """Numba function to handle score."""
+
 from numba.core.decorators import njit
 import numpy as np
 

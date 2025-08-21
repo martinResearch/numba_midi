@@ -7,7 +7,58 @@ import numpy as np
 # from numba_midi.numba.engine2d import rectangles_segment_intersections
 from numba_midi.cython.engine2d import rectangles_segment_intersections
 from numba_midi.score import Notes, Score
+from dataclasses import dataclass
 
+
+@dataclass
+class SelectedNote:
+    track_id: int
+    note_index: int
+    side: int
+
+@dataclass
+class TrackNotesSelection:
+    """Store information about selected notes in a track."""
+    indices: np.ndarray  # note indices
+    sides: np.ndarray  # -1 for start, 0 for both, 1 for end
+
+@dataclass
+class ScoreNotesSelection:
+    """Store information about selected notes in a score."""
+    track_selections: dict[int, TrackNotesSelection]
+
+    @property
+    def num_notes(self) -> int:
+        return sum(selection.indices.size for selection in self.track_selections.values())
+
+    def asdict_no_sides(self) -> dict[int, np.ndarray]:
+        return {track_id: selection.indices for track_id, selection in self.track_selections.items()}
+
+    def as_selected_notes(self) -> list[SelectedNote]:
+        """Convert the selection to a list of SelectedNote."""
+        selected_notes = []
+        for track_id, selection in self.track_selections.items():
+            for i in range(selection.indices.size):
+                selected_notes.append(SelectedNote(
+                    track_id=track_id,
+                    note_index=selection.indices[i],
+                    side=selection.sides[i]
+                ))
+        return selected_notes
+
+    @classmethod
+    def from_selected_notes(cls, selected_notes: list[SelectedNote]) -> "ScoreNotesSelection":
+        """Convert a list of SelectedNote to a ScoreNotesSelection."""
+        track_selections = {}
+        for note in selected_notes:
+            if note.track_id not in track_selections:
+                track_selections[note.track_id] = TrackNotesSelection(
+                    indices=np.array([], dtype=int),
+                    sides=np.array([], dtype=int)
+                )
+            track_selections[note.track_id].indices = np.append(track_selections[note.track_id].indices, note.note_index)
+            track_selections[note.track_id].sides = np.append(track_selections[note.track_id].sides, note.side)
+        return cls(track_selections=track_selections)
 
 def remove_pitch_bend(score: Score, track_id: int, time: float) -> None:
     """Remove pitch bend events at a specific time for a track."""
@@ -51,9 +102,9 @@ def find_notes_at_position(
     pitch: int,
     border_width_ratio: float = 0.2,
     max_border_width_sec: float = 0.1,
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> ScoreNotesSelection:
     """Find notes at the given position."""
-    selection: dict[int, tuple[np.ndarray, np.ndarray]] = {}  # Dictionary to store (track_id, note_index, side)
+    track_selections = {}
     for track_id in track_ids:
         track = score.tracks[track_id]
         if len(track.notes) == 0:
@@ -68,14 +119,15 @@ def find_notes_at_position(
             time > overlapping_notes.end - border_width_sec
         )
         if len(overlapping_notes) > 0:
-            selection[track_id] = (indices, side)
+            track_selections[track_id] = TrackNotesSelection(indices=indices, sides=side)
 
-    return selection
+    return ScoreNotesSelection(track_selections=track_selections)
+
 
 
 def find_first_note_at_position(
     score: Score, track_ids: Iterable[int], time: float, pitch: int
-) -> Optional[tuple[int, int, int]]:
+) -> SelectedNote|None:
     """Find the first note at the given position."""
     selected_notes = find_notes_at_position(
         score=score,
@@ -84,20 +136,17 @@ def find_first_note_at_position(
         pitch=pitch,
     )
     # keep only the first note that matches the position
-    if len(selected_notes) > 0:
-        track_id, (note_indices, sides) = list(selected_notes.items())[0]
-        note_index = int(note_indices[0])  # take only the first one
-        side = int(sides[0])
-        return (track_id, note_index, side)
-    else:
-        return None
+    if len(selected_notes.track_selections) > 0:
+        return selected_notes.as_selected_notes()[0]
+    return None
+
 
 
 def find_notes_in_segment(
     score: Score, track_ids: Iterable[int], pitch1: int, pitch2: int, time_1: float, time_2: float
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> ScoreNotesSelection:
     """Find notes in the segment defined by time_1, time_2 and pitch1, pitch2."""
-    selection = {}
+    track_selections = {}
     for track_id in track_ids:
         track = score.tracks[track_id]
         if len(track.notes) == 0:
@@ -115,11 +164,13 @@ def find_notes_in_segment(
 
         overlapping = rectangles_segment_intersections(rectangles, np.array([[time_1, pitch1], [time_2, pitch2]]))
         indices = np.nonzero(overlapping)[0]
-        side = np.zeros(len(indices), dtype=np.int8)  # Initialize side array
+        sides = np.zeros(len(indices), dtype=np.int8)  # Initialize side array
         if len(indices) > 0:
-            selection[track_id] = (indices, side)
+            track_selections[track_id] = TrackNotesSelection(indices=indices, sides=sides)
 
-    return selection
+    return ScoreNotesSelection(track_selections=track_selections)
+
+
 
 
 def find_notes_in_rectangle(
@@ -128,7 +179,7 @@ def find_notes_in_rectangle(
     selection_rectangle: tuple[float, float, float, float],
     tol: float,
     both_sides: bool = False,
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> ScoreNotesSelection:
     """Find notes in a selection rectangle defined by (t1, p1, t2, p2) with a tolerance."""
     t1, p1, t2, p2 = selection_rectangle
     time_start = t1 - tol
@@ -137,7 +188,7 @@ def find_notes_in_rectangle(
     pitch_bottom = p1
 
     # Find notes in the selection rectangle
-    selection: dict[int, tuple[np.ndarray, np.ndarray]] = {}  # Array to store (track_id, note_index) tuples
+    track_selections: dict[str, TrackNotesSelection] = {}
 
     for track_id in track_ids:
         track = score.tracks[track_id]
@@ -161,21 +212,22 @@ def find_notes_in_rectangle(
         # -1 for start only in selection, 1 for end, 0 for both
         sides = np.where(start_in_range[selected_indices], np.where(end_in_range[selected_indices], 0, 1), -1)
 
-        # Check if the notes are at the start or end of the selection rectangle
-        selection[track_id] = (selected_indices, sides)
-    return selection
+        # Create NotesSelection object for this track
+        track_selections[track_id] = TrackNotesSelection(indices=selected_indices, sides=sides)
+
+    return ScoreNotesSelection(track_selections=track_selections)
 
 
-def remove_selected_notes(score: Score, selected_notes: dict[int, tuple[np.ndarray, np.ndarray]]) -> None:
+def remove_selected_notes(score: Score, selected_notes: ScoreNotesSelection) -> None:
     """Remove selected notes from the score."""
     new_notes_init = {}
     selected_notes_sides = {}
-    for track_id, (selected_indices, _) in selected_notes.items():
+    for track_id, track_selection in selected_notes.track_selections.items():
         track = score.tracks[track_id]
-        new_notes_init[track_id] = track.notes[selected_indices]
+        new_notes_init[track_id] = track.notes[track_selection.indices]
         selected_notes_sides[track_id] = np.zeros((len(new_notes_init[track_id])), dtype=bool)
         # remove the selected notes from the track
-        track.notes.delete(selected_indices)
+        track.notes.delete(track_selection.indices)
 
 
 def remove_notes_in_segment(
@@ -191,7 +243,7 @@ def remove_notes_in_segment(
 
 def move_selected_notes(
     score: Score,
-    selected_notes: dict[int, tuple[np.ndarray, np.ndarray]],
+    selected_notes: ScoreNotesSelection,
     pitch_delta: float,
     time_delta: float,
     ref_score: Optional[Score] = None,
@@ -202,17 +254,17 @@ def move_selected_notes(
         ref_score = score
 
     assert selected_notes is not None, "No notes selected for moving."
-    for track_id, (note_indices, sides) in selected_notes.items():
+    for track_id, track_selection in selected_notes.track_selections.items():
         track = ref_score.tracks[track_id]
-        notes = track.notes[note_indices]
+        notes = track.notes[track_selection.indices]
         # Calculate new pitch and start time
         new_pitch = (notes.pitch + pitch_delta).astype(np.int32)
         new_pitch = np.clip(new_pitch, 0, 127)  # Clamp to valid MIDI pitch range
 
-        new_start = notes.start + time_delta * (sides <= 0)
+        new_start = notes.start + time_delta * (track_selection.sides <= 0)
         new_start = np.clip(new_start, 0, score.duration)
 
-        new_end = notes.end + time_delta * (sides >= 0)
+        new_end = notes.end + time_delta * (track_selection.sides >= 0)
         new_end = np.clip(new_end, 0, score.duration)
         new_duration = new_end - new_start
         # remove notes with duration 0
@@ -229,15 +281,15 @@ def move_selected_notes(
             velocity=velocity,
         )
         # overwrite the selected notes in the track
-        score.tracks[track_id].notes[note_indices] = new_notes_track
+        score.tracks[track_id].notes[track_selection.indices] = new_notes_track
 
 
-def copy_selected_notes(score: Score, selected_notes: dict[int, tuple[np.ndarray, np.ndarray]]) -> dict[int, Notes]:
+def copy_selected_notes(score: Score, selected_notes: ScoreNotesSelection) -> dict[int, Notes]:
     """Copy selected notes from the score."""
     new_notes = {}
-    for track_id, (note_indices, _) in selected_notes.items():
+    for track_id, track_selection in selected_notes.track_selections.items():
         track = score.tracks[track_id]
-        new_notes[track_id] = track.notes[note_indices]
+        new_notes[track_id] = track.notes[track_selection.indices]
     return new_notes
 
 
@@ -246,11 +298,11 @@ def paste_notes(
     notes: dict[int, Notes],
     time_offset: float = 0.0,
     pitch_offset: int = 0,
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+) -> ScoreNotesSelection:
     """Paste notes into the score with an optional time and pitch offset.
-    return the new notes indices and selection sides.
+    return the new notes selection.
     """
-    selected_notes = {}
+    track_selections = {}
     for track_id, track_notes in notes.items():
         num_score_notes = len(score.tracks[track_id].notes)
         score.add_notes(
@@ -260,12 +312,11 @@ def paste_notes(
             pitch=track_notes.pitch + pitch_offset,
             velocity=track_notes.velocity,
         )
-        selected_notes[track_id] = (
-            np.arange(num_score_notes, num_score_notes + len(track_notes)),
-            np.zeros(len(track_notes), dtype=np.int8),
-        )
+        indices = np.arange(num_score_notes, num_score_notes + len(track_notes))
+        sides = np.zeros(len(track_notes), dtype=np.int8)
+        track_selections[track_id] = TrackNotesSelection(indices=indices, sides=sides)
 
-    return selected_notes
+    return ScoreNotesSelection(track_selections=track_selections)
 
 
 def edit_notes(

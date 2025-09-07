@@ -41,7 +41,7 @@ cpdef cnp.ndarray get_event_times(
     cdef int32_t tick = 0
     cdef double time = 0.0
     cdef double quarter_notes_per_minute_init = 120.0
-    cdef double second_per_tick = quarter_notes_per_minute_init / ticks_per_quarter / 60.0
+    cdef double second_per_tick =  60/( quarter_notes_per_minute_init * ticks_per_quarter)
     cdef Py_ssize_t num_events = midi_events.shape[0]
     cdef Py_ssize_t num_tempo_events = tempo_events.shape[0]
     cdef cnp.ndarray[cnp.float32_t, ndim=1] events_times = np.zeros(num_events, dtype=np.float32)
@@ -89,7 +89,7 @@ cpdef cnp.ndarray get_event_times_soa_fast(
     cdef int32_t tick = 0
     cdef double time = 0.0
     cdef double quarter_notes_per_minute_init = 120.0
-    cdef double second_per_tick = quarter_notes_per_minute_init / ticks_per_quarter / 60.0
+    cdef double second_per_tick =  60/( quarter_notes_per_minute_init * ticks_per_quarter)
     cdef int32_t ref_tick = 0
     cdef double ref_time = 0.0
     cdef Py_ssize_t last_tempo_event = -1
